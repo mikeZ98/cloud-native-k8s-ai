@@ -43,8 +43,8 @@ from cloud_native_k8s_ai.core import (
     ManifestRenderError,
     TopologyConflictError,
     Violation,
-    reject_yaml_aliases,
     render_yaml,
+    screen_untrusted_yaml,
 )
 from cloud_native_k8s_ai.guardrails import GuardrailError
 from cloud_native_k8s_ai.tools.helm import ChartValuesError
@@ -741,10 +741,10 @@ async def test_validate_topology_rejects_bad_input(
     assert fragment in problem["detail"]
 
 
-def test_reject_yaml_aliases_allows_plain_documents() -> None:
-    reject_yaml_aliases("---\na: 1\n---\nb: [1, 2]\n")
+def test_screen_untrusted_yaml_allows_plain_documents() -> None:
+    screen_untrusted_yaml("---\na: 1\n---\nb: [1, 2]\n")
     with pytest.raises(ManifestRenderError, match="anchors"):
-        reject_yaml_aliases("a: &x 1\n")
+        screen_untrusted_yaml("a: &x 1\n")
 
 
 # ---------------------------------------------------------------------------

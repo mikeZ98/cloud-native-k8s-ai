@@ -83,7 +83,8 @@ uvicorn --factory cloud_native_k8s_ai.api:create_app --port 8000   # control pla
   body parameters: Python-mode validation rejects JSON arrays for the strict tuple fields.
   Document them with `json_body` / `component`. Every error leaves the API as an RFC 7807
   `application/problem+json` response mapped in `api.problems`; add new core errors there.
-- Client-supplied YAML is parsed with `core.parse_untrusted_yaml` (anchors/aliases refused).
+- Client-supplied YAML is parsed with `core.parse_untrusted_yaml` (anchors/aliases and
+  nesting deeper than `MAX_YAML_DEPTH` refused before PyYAML constructs anything).
 - Admission guardrails (`guardrails/`) judge raw documents, never typed models (those refuse
   to parse what admission must catch). Each violation has a stable kebab-case `code` and a
   `RemediationAdvice`; automatic fixes are RFC 6902 patches or new objects, applied by the

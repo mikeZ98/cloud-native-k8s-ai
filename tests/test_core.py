@@ -1148,3 +1148,16 @@ def _container() -> Container:
         readiness_probe=probe,
         liveness_probe=probe,
     )
+
+
+def test_untrusted_yaml_nesting_is_bounded() -> None:
+    from cloud_native_k8s_ai.core import MAX_YAML_DEPTH, parse_untrusted_yaml  # noqa: PLC0415
+
+    def nested(depth: int) -> str:
+        return "{a: " * depth + "1" + "}" * depth
+
+    assert parse_untrusted_yaml(nested(MAX_YAML_DEPTH))[0]["a"]
+    with pytest.raises(ManifestRenderError, match=f"deeper than {MAX_YAML_DEPTH} levels"):
+        parse_untrusted_yaml(nested(MAX_YAML_DEPTH + 1))
+    with pytest.raises(ManifestRenderError, match="deeper than"):
+        parse_untrusted_yaml("[" * 50_000 + "]" * 50_000)  # would exhaust the stack

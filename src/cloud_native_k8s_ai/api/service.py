@@ -28,7 +28,7 @@ from cloud_native_k8s_ai.core import (
     ManifestRenderError,
     TopologySolver,
     compile_ai_stack,
-    reject_yaml_aliases,
+    screen_untrusted_yaml,
 )
 from cloud_native_k8s_ai.guardrails import AdmissionDeniedError, AdmissionEngine
 from cloud_native_k8s_ai.schemas import NetworkPolicy
@@ -142,7 +142,7 @@ class ControlPlane:
     def validate_topology(self, manifests: str, spec: InfraSpec | None) -> TopologyResponse:
         spec = spec or self.require_reference()[1]
         try:
-            reject_yaml_aliases(manifests)
+            screen_untrusted_yaml(manifests)
             bundle = ManifestBundle.from_yaml(manifests)
             generator = AIStackGenerator(spec.settings(), spec.stack)
             report = TopologySolver(generator.topology(bundle)).verify(generator.intent())

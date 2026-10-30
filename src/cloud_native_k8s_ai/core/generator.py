@@ -178,19 +178,38 @@ def parse_yaml(text: str) -> list[dict[str, Any]]:
     return parsed
 
 
-def reject_yaml_aliases(text: str) -> None:
-    """Refuse anchors/aliases: expanding them on serialization is a billion-laughs bomb."""
+MAX_YAML_DEPTH: Final = 64
+"""Deepest collection nesting accepted from clients (real manifests stay below ~20)."""
+
+
+def screen_untrusted_yaml(text: str) -> None:
+    """Refuse YAML that is dangerous to load, scanning the event stream only.
+
+    Anchors/aliases are refused (expanding them on serialization is a billion-laughs
+    bomb), and so is nesting beyond ``MAX_YAML_DEPTH``: PyYAML builds objects
+    recursively, so a few kilobytes of ``[[[[...`` would exhaust the stack. The parser
+    itself is iterative, so screening stops at the first offending event.
+    """
+    depth = 0
     try:
         for event in yaml.parse(text, Loader=yaml.SafeLoader):
             if isinstance(event, yaml.AliasEvent) or getattr(event, "anchor", None):
                 raise ManifestRenderError("YAML anchors and aliases are not accepted")
+            if isinstance(event, yaml.CollectionStartEvent):
+                depth += 1
+                if depth > MAX_YAML_DEPTH:
+                    raise ManifestRenderError(
+                        f"YAML nesting deeper than {MAX_YAML_DEPTH} levels is not accepted"
+                    )
+            elif isinstance(event, yaml.CollectionEndEvent):
+                depth -= 1
     except yaml.YAMLError as exc:
         raise ManifestRenderError(f"invalid YAML: {exc}") from exc
 
 
 def parse_untrusted_yaml(text: str) -> list[dict[str, Any]]:
-    """``parse_yaml`` for client-supplied text: anchors and aliases are refused first."""
-    reject_yaml_aliases(text)
+    """``parse_yaml`` for client-supplied text, after ``screen_untrusted_yaml``."""
+    screen_untrusted_yaml(text)
     return parse_yaml(text)
 
 

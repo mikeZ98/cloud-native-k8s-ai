@@ -19,6 +19,7 @@ from cloud_native_k8s_ai.core.errors import (
 )
 from cloud_native_k8s_ai.core.generator import (
     MANIFEST_TYPES,
+    MAX_YAML_DEPTH,
     SCRATCH_PATH,
     TOP_LEVEL_ORDER,
     AIStackGenerator,
@@ -30,8 +31,8 @@ from cloud_native_k8s_ai.core.generator import (
     compile_ai_stack,
     parse_untrusted_yaml,
     parse_yaml,
-    reject_yaml_aliases,
     render_yaml,
+    screen_untrusted_yaml,
 )
 from cloud_native_k8s_ai.core.topology import (
     SENTINEL_PORTS,
@@ -47,6 +48,7 @@ from cloud_native_k8s_ai.core.topology import (
 __all__ = [
     "CLUSTER_DOMAIN",
     "MANIFEST_TYPES",
+    "MAX_YAML_DEPTH",
     "SCRATCH_PATH",
     "SENTINEL_PORTS",
     "TOP_LEVEL_ORDER",
@@ -76,7 +78,7 @@ __all__ = [
     "desired_replicas",
     "parse_untrusted_yaml",
     "parse_yaml",
-    "reject_yaml_aliases",
     "render_yaml",
+    "screen_untrusted_yaml",
     "service_host",
 ]
