@@ -23,7 +23,7 @@ cluster, no cloud account, no network in the tests.
   [the zero-trust invariant](docs/architecture.md#4-the-zero-trust-invariant).
 - **One source of truth.** The Helm chart is rendered by an in-process Go-template engine
   and must match the generator object for object, down to scalar types and list order.
-- **Admission with remediation.** 44 violation codes across workload security, zero-trust
+- **Admission with remediation.** 45 violation codes across workload security, zero-trust
   networking and autoscaling safety; a critic loop applies RFC 6902 fixes until stable and
   never widens access.
 - **Attacked on purpose.** 41 adversarial vectors (privilege escalation, label spoofing,

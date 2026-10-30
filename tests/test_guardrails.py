@@ -1115,7 +1115,7 @@ def test_catalog_has_no_dead_codes() -> None:
                 families.append(re.compile("".join(parts)))
     dead = {c for c in CATALOG if c not in literals and not any(f.fullmatch(c) for f in families)}
     assert dead == set()
-    assert len(CATALOG) == 44
+    assert len(CATALOG) == 45
 
 
 def test_catalog_refuses_inconsistent_violations() -> None:
@@ -1130,3 +1130,44 @@ def test_catalog_refuses_inconsistent_violations() -> None:
         violation("run-as-root", remediation=manual, **fields)
     with pytest.raises(KeyError):
         violation("made-up-code", remediation=manual, **fields)
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [
+        {
+            "matchLabels": {
+                "app.kubernetes.io/name": "inference-apl",
+                "app.kubernetes.io/component": "api",
+            }
+        },
+        {"matchExpressions": [{"key": "tier", "operator": "Exists"}]},
+        {"matchLabels": "not-a-map"},
+    ],
+)
+def test_selector_must_select_the_pod_template(docs: Docs, selector: dict[str, Any]) -> None:
+    find(docs, "Deployment", API)["spec"]["selector"] = selector
+    (violation,) = WorkloadGuardrail().evaluate(docs)
+    assert (violation.code, violation.path) == ("selector-template-mismatch", "/spec/selector")
+    assert violation.decision is GuardrailDecision.DENY
+    assert not violation.remediation.automatic
+
+
+def test_selector_check_skips_pods_jobs_and_selectorless_objects(docs: Docs) -> None:
+    template = copy.deepcopy(find(docs, "Deployment", API)["spec"]["template"])
+    extra = [
+        {"kind": "Job", "metadata": {"name": "j", "namespace": NS},
+         "spec": {"selector": {"matchLabels": {"other": "x"}}, "template": template}},
+        {"kind": "DaemonSet", "metadata": {"name": "d", "namespace": NS},
+         "spec": {"template": template}},
+    ]  # fmt: skip
+    assert WorkloadGuardrail().evaluate([*docs, *extra]) == []
+
+
+def test_typo_in_the_api_labels_also_breaks_its_network_grants(docs: Docs) -> None:
+    labels = find(docs, "Deployment", API)["spec"]["template"]["metadata"]["labels"]
+    labels["app.kubernetes.io/name"] = "inference-apl"
+    report = AdmissionEngine.for_stack(InfraSettings(), stack()).evaluate(docs)
+    # The selector no longer selects its pods, and the typo'd pods are no longer "the API",
+    # so Qdrant's API-only rule now admits no recognized API workload.
+    assert report.codes() == {"selector-template-mismatch", "qdrant-ingress-not-exclusive"}

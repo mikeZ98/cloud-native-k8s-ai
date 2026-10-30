@@ -60,6 +60,12 @@ CATALOG: Final[Mapping[str, CodeSpec]] = {
         ("capabilities-not-dropped", _D, "patch", "capabilities.drop does not contain ALL"),
         ("capabilities-added", _D, "patch", "adds a capability outside the allow list"),
         ("host-namespace", _D, "patch", "hostNetwork, hostPID or hostIPC is true"),
+        (
+            "selector-template-mismatch",
+            _D,
+            "manual",
+            "spec.selector does not select the pod template",
+        ),
         ("best-effort-container", _D, "manual", "no resource requests or limits at all"),
         ("missing-resource-requests", _D, "manual", "cpu or memory request missing"),
         ("missing-resource-limits", _D, "manual", "cpu or memory limit missing"),

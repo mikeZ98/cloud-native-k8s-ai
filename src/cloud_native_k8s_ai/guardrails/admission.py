@@ -25,6 +25,7 @@ from cloud_native_k8s_ai.guardrails.objects import (
     Workload,
     mapping,
     pointer,
+    selector,
     sequence,
     workloads,
 )
@@ -68,6 +69,7 @@ class WorkloadGuardrail:
     def evaluate(self, documents: Sequence[Mapping[str, Any]]) -> list[PolicyViolation]:
         violations: list[PolicyViolation] = []
         for workload in workloads(documents):
+            violations += self._selector(workload)
             violations += self._host_namespaces(workload)
             for container in workload.containers():
                 violations += self._security(workload, container)
@@ -86,6 +88,29 @@ class WorkloadGuardrail:
             message=message,
             remediation=advice,
         )
+
+    def _selector(self, workload: Workload) -> list[PolicyViolation]:
+        """``spec.selector`` must select the pod template: the API server rejects a mismatch,
+        and a typo'd label would silently drop every NetworkPolicy grant to those pods."""
+        raw = mapping(workload.document.get("spec")).get("selector")
+        if raw is None or workload.ref.kind in {"Pod", "Job", "CronJob"}:
+            return []  # bare pods and jobs have no (or a generated) selector
+        parsed = selector(raw)
+        if parsed is not None and parsed.matches(workload.pod_labels):
+            return []
+        return [
+            self._violation(
+                workload,
+                "selector-template-mismatch",
+                "/spec/selector",
+                f"selector {raw!r} does not match the pod template labels "
+                f"{dict(workload.pod_labels)}",
+                RemediationAdvice(
+                    summary="make spec.selector.matchLabels a subset of the pod template labels",
+                    action="manual",
+                ),
+            )
+        ]
 
     def _host_namespaces(self, workload: Workload) -> list[PolicyViolation]:
         return [

@@ -181,6 +181,7 @@ catalog and rejects unregistered codes and remediations of the wrong kind.
 | `capabilities-not-dropped` | workload-security | DENY | patch | capabilities.drop does not contain ALL |
 | `capabilities-added` | workload-security | DENY | patch | adds a capability outside the allow list |
 | `host-namespace` | workload-security | DENY | patch | hostNetwork, hostPID or hostIPC is true |
+| `selector-template-mismatch` | workload-security | DENY | manual | spec.selector does not select the pod template |
 | `best-effort-container` | workload-security | DENY | manual | no resource requests or limits at all |
 | `missing-resource-requests` | workload-security | DENY | manual | cpu or memory request missing |
 | `missing-resource-limits` | workload-security | DENY | manual | cpu or memory limit missing |
