@@ -45,6 +45,7 @@ from cloud_native_k8s_ai.schemas import (
     NetworkPolicySpec,
     NodePool,
     ObjectMeta,
+    PersistentVolumeClaim,
     PersistentVolumeClaimSpec,
     PersistentVolumeClaimTemplate,
     PodSpec,
@@ -300,6 +301,9 @@ K8S_BUILDERS: dict[str, Callable[[], InfraModel]] = {
     "deployment": deployment,
     "service": service,
     "statefulset": statefulset,
+    "pvc": lambda: PersistentVolumeClaim(
+        metadata=ObjectMeta(name="redis-data", namespace=NS), spec=claim("data").spec
+    ),
     "scaledobject": scaled_object,
     "default-deny": lambda: default_deny_policy(NS),
     "dns-egress": lambda: dns_egress_policy(NS),
@@ -908,6 +912,22 @@ def test_statefulset_selector_must_match_template() -> None:
 def test_invalid_pvc_rejected(overrides: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
         claim("storage", **overrides)
+
+
+def test_standalone_pvc_manifest() -> None:
+    pvc = PersistentVolumeClaim(
+        metadata=ObjectMeta(name="redis-data", namespace=NS), spec=claim("data", "8Gi").spec
+    )
+    assert pvc.to_k8s() == {
+        "apiVersion": "v1",
+        "kind": "PersistentVolumeClaim",
+        "metadata": {"name": "redis-data", "namespace": NS},
+        "spec": {
+            "accessModes": ["ReadWriteOnce"],
+            "storageClassName": "gp3",
+            "resources": {"requests": {"storage": "8Gi"}},
+        },
+    }
 
 
 def test_pvc_access_modes_validated() -> None:

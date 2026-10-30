@@ -65,6 +65,15 @@ class PersistentVolumeClaimTemplate(K8sModel):
     spec: PersistentVolumeClaimSpec
 
 
+class PersistentVolumeClaim(K8sModel):
+    """Standalone claim, e.g. for a single-replica Deployment such as Redis."""
+
+    api_version: Literal["v1"] = "v1"
+    kind: Literal["PersistentVolumeClaim"] = "PersistentVolumeClaim"
+    metadata: ObjectMeta
+    spec: PersistentVolumeClaimSpec
+
+
 class StatefulSetUpdateStrategy(K8sModel):
     type: Literal["RollingUpdate", "OnDelete"] = "RollingUpdate"
 
