@@ -37,6 +37,7 @@ dev = [
   "yamllint>=1.35",
   "types-pyyaml>=6.0",
   "types-jsonschema>=4.23",
+  "hypothesis>=6.120",
 ]
 
 [tool.uv]
