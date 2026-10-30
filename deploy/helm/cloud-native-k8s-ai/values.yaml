@@ -1,0 +1,141 @@
+---
+# Default values for cloud-native-k8s-ai.
+#
+# Every key is validated by values.schema.json at install time. The offline tooling
+# (cloud_native_k8s_ai.tools.helm) also checks them against the strict Pydantic contracts
+# and verifies the rendered chart matches the typed core generator object for object.
+# Objects are created in the release namespace: helm install ai . --namespace ai-system
+#
+# Optional keys are absent by default and shown commented out; quote CPU quantities
+# ("1", "2") so they stay strings.
+
+# Value of the `environment` label on every workload: dev | staging | prod.
+environment: dev
+
+# FastAPI inference service (Deployment + ClusterIP Service). Scaled by KEDA when
+# autoscaling.enabled; `replicas` is then the starting point within the KEDA bounds.
+api:
+  name: inference-api
+  image:
+    repository: ghcr.io/mikez98/inference-api
+    tag: 0.1.0
+    # digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  replicas: 2
+  containerPort: 8000
+  service:
+    port: 80
+  probes:
+    livenessPath: /healthz
+    readinessPath: /readyz
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  # Extra environment variables. QDRANT_HOST, QDRANT_HTTP_PORT, QDRANT_GRPC_PORT,
+  # REDIS_URL, REDIS_QUEUE and TMPDIR are injected by the chart and cannot be overridden.
+  env: []
+  # env:
+  #   - name: MODEL_NAME
+  #     value: bge-small-en-v1.5
+  #   - name: API_KEY
+  #     valueFrom:
+  #       secretKeyRef:
+  #         name: inference-api
+  #         key: api-key
+  # Extra pod/object labels; the app.kubernetes.io/* and environment keys are reserved.
+  labels: {}
+
+# Qdrant vector database: single-node StatefulSet with storage and snapshot volumes,
+# reachable only from the API pods on the REST and gRPC ports.
+qdrant:
+  name: qdrant
+  image:
+    repository: docker.io/qdrant/qdrant
+    tag: v1.15.4
+  ports:
+    rest: 6333
+    grpc: 6334
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  persistence:
+    # storageClassName: "" selects the cluster default StorageClass.
+    storage:
+      size: 20Gi
+      mountPath: /qdrant/storage
+      storageClassName: ""
+    snapshots:
+      size: 10Gi
+      mountPath: /qdrant/snapshots
+      storageClassName: ""
+  labels: {}
+
+# Redis job broker; KEDA scales the API on the length of its job list.
+redis:
+  name: redis
+  image:
+    repository: docker.io/library/redis
+    tag: 7.4.2-alpine
+  port: 6379
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  # In-memory ceiling (Ki/Mi/Gi); must stay below resources.limits.memory to leave
+  # headroom for fork/AOF rewrites.
+  maxmemory: 768Mi
+  # noeviction: a full queue rejects writes instead of silently dropping jobs.
+  maxmemoryPolicy: noeviction
+  dataMountPath: /data
+  persistence:
+    # none | rdb | aof | rdb+aof. "none" uses an emptyDir and creates no PVC.
+    mode: aof
+    appendfsync: everysec
+    # RDB snapshot rules (used when mode includes rdb): after `seconds` if `changes` keys changed.
+    savePoints:
+      - seconds: 3600
+        changes: 1
+      - seconds: 300
+        changes: 100
+    size: 8Gi
+    storageClassName: ""
+  labels: {}
+
+# KEDA ScaledObject: scale the API on the Redis list length (requires the KEDA CRDs).
+autoscaling:
+  enabled: true
+  listName: inference-jobs
+  # Target pending jobs per replica.
+  listLength: 5
+  # At or below this queue length the scaler is inactive.
+  activationListLength: 0
+  minReplicas: 1
+  maxReplicas: 10
+  # idleReplicas: 0           # replicas while inactive; must be lower than minReplicas
+  cooldownPeriod: 300
+  pollingInterval: 30
+  databaseIndex: 0
+  enableTLS: false
+  # authenticationRef: redis-auth   # TriggerAuthentication holding the Redis password
+
+# Zero-trust NetworkPolicies (always rendered): default deny for the whole namespace,
+# DNS egress to kube-dns, and only the flows below.
+networkPolicy:
+  # Namespace of the ingress controller allowed to reach the API container port.
+  ingressController:
+    namespace: ingress-nginx
+  # KEDA operator pods allowed to poll Redis for the queue length.
+  kedaOperator:
+    namespace: keda
+    podLabels:
+      app: keda-operator

@@ -1,0 +1,377 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "cloud-native-k8s-ai values",
+  "description": "Strict contract for the chart values. Patterns mirror the Pydantic models in src/cloud_native_k8s_ai/schemas; cross-field rules (maxmemory headroom, replica bounds, timing windows) are enforced by the templates and the offline tooling.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["environment", "api", "qdrant", "redis", "autoscaling", "networkPolicy"],
+  "properties": {
+    "global": {
+      "description": "Reserved by Helm for values shared with parent/sub-charts; unused by this chart.",
+      "type": "object"
+    },
+    "environment": {
+      "description": "Value of the environment label on every workload.",
+      "enum": ["dev", "staging", "prod"]
+    },
+    "api": {
+      "description": "FastAPI inference Deployment and Service.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "image",
+        "replicas",
+        "containerPort",
+        "service",
+        "probes",
+        "resources",
+        "env",
+        "labels"
+      ],
+      "properties": {
+        "name": { "$ref": "#/definitions/dnsLabel" },
+        "image": { "$ref": "#/definitions/image" },
+        "replicas": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "containerPort": { "$ref": "#/definitions/port" },
+        "service": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["port"],
+          "properties": { "port": { "$ref": "#/definitions/port" } }
+        },
+        "probes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["livenessPath", "readinessPath"],
+          "properties": {
+            "livenessPath": { "$ref": "#/definitions/absolutePath" },
+            "readinessPath": { "$ref": "#/definitions/absolutePath" }
+          }
+        },
+        "resources": { "$ref": "#/definitions/resources" },
+        "env": { "type": "array", "items": { "$ref": "#/definitions/envVar" } },
+        "labels": { "$ref": "#/definitions/labels" }
+      }
+    },
+    "qdrant": {
+      "description": "Single-node Qdrant StatefulSet with storage and snapshot volumes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "image", "ports", "resources", "persistence", "labels"],
+      "properties": {
+        "name": { "$ref": "#/definitions/dnsLabel" },
+        "image": { "$ref": "#/definitions/image" },
+        "ports": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rest", "grpc"],
+          "properties": {
+            "rest": { "$ref": "#/definitions/port" },
+            "grpc": { "$ref": "#/definitions/port" }
+          }
+        },
+        "resources": { "$ref": "#/definitions/resources" },
+        "persistence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["storage", "snapshots"],
+          "properties": {
+            "storage": { "$ref": "#/definitions/volume" },
+            "snapshots": { "$ref": "#/definitions/volume" }
+          }
+        },
+        "labels": { "$ref": "#/definitions/labels" }
+      }
+    },
+    "redis": {
+      "description": "Redis job broker Deployment, Service and data volume.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "image",
+        "port",
+        "resources",
+        "maxmemory",
+        "maxmemoryPolicy",
+        "dataMountPath",
+        "persistence",
+        "labels"
+      ],
+      "properties": {
+        "name": { "$ref": "#/definitions/dnsLabel" },
+        "image": { "$ref": "#/definitions/image" },
+        "port": { "$ref": "#/definitions/port" },
+        "resources": { "$ref": "#/definitions/resources" },
+        "maxmemory": {
+          "description": "In-memory ceiling; Ki/Mi/Gi only so the chart can pass it to redis-server in bytes.",
+          "type": "string",
+          "pattern": "^[1-9][0-9]*(Ki|Mi|Gi)$"
+        },
+        "maxmemoryPolicy": {
+          "enum": [
+            "noeviction",
+            "allkeys-lru",
+            "allkeys-lfu",
+            "allkeys-random",
+            "volatile-lru",
+            "volatile-lfu",
+            "volatile-random",
+            "volatile-ttl"
+          ]
+        },
+        "dataMountPath": { "$ref": "#/definitions/absolutePath" },
+        "persistence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "appendfsync", "savePoints", "size", "storageClassName"],
+          "properties": {
+            "mode": { "enum": ["none", "rdb", "aof", "rdb+aof"] },
+            "appendfsync": { "enum": ["always", "everysec", "no"] },
+            "savePoints": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["seconds", "changes"],
+                "properties": {
+                  "seconds": { "type": "integer", "minimum": 1, "maximum": 86400 },
+                  "changes": { "type": "integer", "minimum": 1 }
+                }
+              }
+            },
+            "size": { "$ref": "#/definitions/quantity" },
+            "storageClassName": { "$ref": "#/definitions/storageClassName" }
+          },
+          "if": { "properties": { "mode": { "enum": ["rdb", "rdb+aof"] } } },
+          "then": { "properties": { "savePoints": { "minItems": 1 } } }
+        },
+        "labels": { "$ref": "#/definitions/labels" }
+      }
+    },
+    "autoscaling": {
+      "description": "KEDA ScaledObject scaling the API on the Redis job list length.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "listName",
+        "listLength",
+        "activationListLength",
+        "minReplicas",
+        "maxReplicas",
+        "cooldownPeriod",
+        "pollingInterval",
+        "databaseIndex",
+        "enableTLS"
+      ],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "listName": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^\\S+$" },
+        "listLength": { "type": "integer", "minimum": 1 },
+        "activationListLength": { "type": "integer", "minimum": 0 },
+        "minReplicas": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "maxReplicas": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "idleReplicas": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "cooldownPeriod": { "type": "integer", "minimum": 0, "maximum": 86400 },
+        "pollingInterval": { "type": "integer", "minimum": 1, "maximum": 3600 },
+        "databaseIndex": { "type": "integer", "minimum": 0, "maximum": 15 },
+        "enableTLS": { "type": "boolean" },
+        "authenticationRef": { "$ref": "#/definitions/dnsLabel" }
+      }
+    },
+    "networkPolicy": {
+      "description": "Peers outside the release namespace that the zero-trust policies admit.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ingressController", "kedaOperator"],
+      "properties": {
+        "ingressController": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["namespace"],
+          "properties": { "namespace": { "$ref": "#/definitions/dnsLabel" } }
+        },
+        "kedaOperator": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["namespace", "podLabels"],
+          "properties": {
+            "namespace": { "$ref": "#/definitions/dnsLabel" },
+            "podLabels": {
+              "type": "object",
+              "minProperties": 1,
+              "propertyNames": { "$ref": "#/definitions/labelKey" },
+              "additionalProperties": { "$ref": "#/definitions/labelValue" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "dnsLabel": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+    },
+    "dnsSubdomain": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+    },
+    "storageClassName": {
+      "description": "Empty string selects the cluster default StorageClass.",
+      "anyOf": [{ "const": "" }, { "$ref": "#/definitions/dnsSubdomain" }]
+    },
+    "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "absolutePath": { "type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^/" },
+    "cpu": {
+      "description": "Positive CPU quantity in millicores (250m) or cores (\"1\", \"1.5\").",
+      "type": "string",
+      "pattern": "^([0-9]+m|[0-9]+(\\.[0-9]{1,3})?)$",
+      "not": { "pattern": "^[0.]+m?$" }
+    },
+    "quantity": {
+      "description": "Positive byte quantity (512Mi, 2Gi, 1G).",
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$",
+      "not": { "pattern": "^[0.]+[A-Za-z]*$" }
+    },
+    "resourceList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cpu", "memory"],
+      "properties": {
+        "cpu": { "$ref": "#/definitions/cpu" },
+        "memory": { "$ref": "#/definitions/quantity" }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requests", "limits"],
+      "properties": {
+        "requests": { "$ref": "#/definitions/resourceList" },
+        "limits": { "$ref": "#/definitions/resourceList" }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^([A-Za-z0-9][A-Za-z0-9.-]*(:[0-9]+)?/)?[a-z0-9]+(([._]|__|-+)[a-z0-9]+)*(/[a-z0-9]+(([._]|__|-+)[a-z0-9]+)*)*$"
+        },
+        "tag": {
+          "description": "Pinned tag; the mutable 'latest' tag is rejected.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$",
+          "not": { "const": "latest" }
+        },
+        "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+      }
+    },
+    "volume": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["size", "mountPath", "storageClassName"],
+      "properties": {
+        "size": { "$ref": "#/definitions/quantity" },
+        "mountPath": { "$ref": "#/definitions/absolutePath" },
+        "storageClassName": { "$ref": "#/definitions/storageClassName" }
+      }
+    },
+    "envName": {
+      "type": "string",
+      "maxLength": 253,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+      "not": {
+        "enum": [
+          "QDRANT_HOST",
+          "QDRANT_HTTP_PORT",
+          "QDRANT_GRPC_PORT",
+          "REDIS_URL",
+          "REDIS_QUEUE",
+          "TMPDIR"
+        ]
+      }
+    },
+    "envVar": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "value"],
+          "properties": {
+            "name": { "$ref": "#/definitions/envName" },
+            "value": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "valueFrom"],
+          "properties": {
+            "name": { "$ref": "#/definitions/envName" },
+            "valueFrom": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["secretKeyRef"],
+              "properties": {
+                "secretKeyRef": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["name", "key"],
+                  "properties": {
+                    "name": { "$ref": "#/definitions/dnsSubdomain" },
+                    "key": { "type": "string", "maxLength": 253, "pattern": "^[-._A-Za-z0-9]+$" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "labelKey": {
+      "type": "string",
+      "maxLength": 317,
+      "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$"
+    },
+    "labelValue": {
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^([A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?)?$"
+    },
+    "labels": {
+      "description": "Extra labels; keys managed by the chart are reserved.",
+      "type": "object",
+      "propertyNames": {
+        "allOf": [
+          { "$ref": "#/definitions/labelKey" },
+          {
+            "not": {
+              "enum": [
+                "app.kubernetes.io/name",
+                "app.kubernetes.io/component",
+                "app.kubernetes.io/part-of",
+                "app.kubernetes.io/managed-by",
+                "app.kubernetes.io/instance",
+                "app.kubernetes.io/version",
+                "helm.sh/chart",
+                "environment"
+              ]
+            }
+          }
+        ]
+      },
+      "additionalProperties": { "$ref": "#/definitions/labelValue" }
+    }
+  }
+}

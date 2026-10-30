@@ -1,0 +1,31 @@
+{{- $ns := .Release.Namespace -}}
+{{- $api := .Values.api -}}
+cloud-native-k8s-ai {{ .Chart.Version }} (app {{ .Chart.AppVersion }}) is installed as release "{{ .Release.Name }}" in namespace "{{ $ns }}".
+
+1. Wait for the workloads to become ready:
+
+     kubectl -n {{ $ns }} rollout status deployment/{{ $api.name }}
+     kubectl -n {{ $ns }} rollout status statefulset/{{ .Values.qdrant.name }}
+     kubectl -n {{ $ns }} rollout status deployment/{{ .Values.redis.name }}
+
+2. Check the API health endpoints through a port-forward:
+
+     kubectl -n {{ $ns }} port-forward service/{{ $api.name }} 8080:{{ int $api.service.port }}
+     curl -fsS http://127.0.0.1:8080{{ $api.probes.readinessPath }}
+     curl -fsS http://127.0.0.1:8080{{ $api.probes.livenessPath }}
+
+3. Verify zero-trust isolation: default-deny-all plus five allow policies.
+
+     kubectl -n {{ $ns }} get networkpolicy
+     Only pods in namespace "{{ .Values.networkPolicy.ingressController.namespace }}" can reach the API on port {{ int $api.containerPort }};
+     Qdrant ({{ int .Values.qdrant.ports.rest }}/{{ int .Values.qdrant.ports.grpc }}) accepts the API pods only.
+{{- if .Values.autoscaling.enabled }}
+
+4. KEDA scales {{ $api.name }} between {{ int .Values.autoscaling.minReplicas }} and {{ int .Values.autoscaling.maxReplicas }} replicas, one per {{ int .Values.autoscaling.listLength }} jobs in the Redis list "{{ .Values.autoscaling.listName }}":
+
+     kubectl -n {{ $ns }} get scaledobject {{ $api.name }}
+     kubectl -n {{ $ns }} get hpa keda-hpa-{{ $api.name }}
+{{- else }}
+
+4. Autoscaling is disabled: {{ $api.name }} runs a fixed {{ int $api.replicas }} replicas.
+{{- end }}

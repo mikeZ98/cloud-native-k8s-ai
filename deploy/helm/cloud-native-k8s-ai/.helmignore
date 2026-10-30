@@ -1,0 +1,11 @@
+# Patterns excluded from the packaged chart (helm package).
+.DS_Store
+.git/
+.gitignore
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+.idea/
+.vscode/

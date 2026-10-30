@@ -1,0 +1,95 @@
+{{- $q := .Values.qdrant }}
+{{- $ctx := dict "root" $ "name" $q.name "component" "vector-store" "extra" $q.labels }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $q.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ai.labels" $ctx | nindent 4 }}
+spec:
+  serviceName: {{ printf "%s-headless" $q.name }}
+  # Single node: distributed mode (p2p port 6335, Raft consensus) is out of scope.
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  # Vectors outlive the release: claims are kept on uninstall and scale-down.
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      {{- include "ai.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      name: {{ $q.name }}
+      labels:
+        {{- include "ai.podLabels" $ctx | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "ai.podSecurityContext" . | nindent 8 }}
+      # Let Qdrant flush segments and the WAL before SIGKILL.
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: qdrant
+          image: {{ include "ai.image" $q.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: rest
+              containerPort: {{ int $q.ports.rest }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ int $q.ports.grpc }}
+              protocol: TCP
+          env:
+            - name: QDRANT__SERVICE__HTTP_PORT
+              value: {{ $q.ports.rest | int | quote }}
+            - name: QDRANT__SERVICE__GRPC_PORT
+              value: {{ $q.ports.grpc | int | quote }}
+            - name: QDRANT__STORAGE__STORAGE_PATH
+              value: {{ $q.persistence.storage.mountPath | quote }}
+            - name: QDRANT__STORAGE__SNAPSHOTS_PATH
+              value: {{ $q.persistence.snapshots.mountPath | quote }}
+            - name: TMPDIR
+              value: /scratch
+          resources:
+            {{- toYaml $q.resources | nindent 12 }}
+          readinessProbe:
+            {{- include "ai.httpProbe" (dict "path" "/readyz" "port" "rest" "period" 10 "failures" 3) | nindent 12 }}
+          livenessProbe:
+            {{- include "ai.httpProbe" (dict "path" "/livez" "port" "rest" "period" 20 "failures" 3) | nindent 12 }}
+          # WAL replay after a restart can be slow on large collections.
+          startupProbe:
+            {{- include "ai.httpProbe" (dict "path" "/livez" "port" "rest" "period" 10 "failures" 60) | nindent 12 }}
+          volumeMounts:
+            - name: storage
+              mountPath: {{ $q.persistence.storage.mountPath | quote }}
+              readOnly: false
+            - name: snapshots
+              mountPath: {{ $q.persistence.snapshots.mountPath | quote }}
+              readOnly: false
+            - name: scratch
+              mountPath: /scratch
+              readOnly: false
+          securityContext:
+            {{- include "ai.containerSecurityContext" . | nindent 12 }}
+      volumes:
+        - {{- include "ai.scratchVolume" . | nindent 10 }}
+  volumeClaimTemplates:
+    {{- range $claim := list "storage" "snapshots" }}
+    {{- $volume := index $q.persistence $claim }}
+    - metadata:
+        name: {{ $claim }}
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- with $volume.storageClassName }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $volume.size }}
+    {{- end }}

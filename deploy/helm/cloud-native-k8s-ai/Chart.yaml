@@ -1,0 +1,26 @@
+---
+apiVersion: v2
+name: cloud-native-k8s-ai
+description: >-
+  Zero-trust AI microservice stack: FastAPI inference API, Qdrant vector store (StatefulSet),
+  Redis job broker and KEDA queue-length autoscaling, isolated by default-deny NetworkPolicies.
+type: application
+version: 1.0.0
+appVersion: 0.1.0
+kubeVersion: ">=1.27.0-0"
+home: https://github.com/mikeZ98/cloud-native-k8s-ai
+sources:
+  - https://github.com/mikeZ98/cloud-native-k8s-ai
+keywords:
+  - fastapi
+  - qdrant
+  - redis
+  - keda
+  - networkpolicy
+  - inference
+maintainers:
+  - name: mikeZ98
+    email: 145975972+mikeZ98@users.noreply.github.com
+    url: https://github.com/mikeZ98
+annotations:
+  category: AI/ML

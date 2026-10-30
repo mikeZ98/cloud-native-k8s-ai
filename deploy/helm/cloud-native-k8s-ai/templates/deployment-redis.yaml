@@ -1,0 +1,95 @@
+{{- $r := .Values.redis }}
+{{- $p := $r.persistence }}
+{{- $ctx := dict "root" $ "name" $r.name "component" "broker" "extra" $r.labels }}
+{{- $aof := or (eq $p.mode "aof") (eq $p.mode "rdb+aof") }}
+{{- $save := list }}
+{{- if or (eq $p.mode "rdb") (eq $p.mode "rdb+aof") }}
+{{- range $p.savePoints }}{{ $save = append $save (printf "%d %d" (int .seconds) (int .changes)) }}{{ end }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $r.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ai.labels" $ctx | nindent 4 }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  # A single writer on a ReadWriteOnce volume: never run two pods at once.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "ai.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      name: {{ $r.name }}
+      labels:
+        {{- include "ai.podLabels" $ctx | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "ai.podSecurityContext" . | nindent 8 }}
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: redis
+          image: {{ include "ai.image" $r.image }}
+          imagePullPolicy: IfNotPresent
+          args:
+            - --port
+            - {{ $r.port | int | quote }}
+            - --maxmemory
+            - {{ include "ai.bytes" $r.maxmemory | quote }}
+            - --maxmemory-policy
+            - {{ $r.maxmemoryPolicy | quote }}
+            - --appendonly
+            - {{ if $aof }}"yes"{{ else }}"no"{{ end }}
+            - --dir
+            - {{ $r.dataMountPath | quote }}
+            {{- if $aof }}
+            - --appendfsync
+            - {{ $p.appendfsync | quote }}
+            {{- end }}
+            - --save
+            - {{ join " " $save | quote }}
+          ports:
+            - name: redis
+              containerPort: {{ int $r.port }}
+              protocol: TCP
+          env: []
+          resources:
+            {{- toYaml $r.resources | nindent 12 }}
+          readinessProbe:
+            tcpSocket:
+              port: redis
+            initialDelaySeconds: 0
+            periodSeconds: 5
+            timeoutSeconds: 1
+            successThreshold: 1
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: redis
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 1
+            successThreshold: 1
+            failureThreshold: 3
+          volumeMounts:
+            - name: data
+              mountPath: {{ $r.dataMountPath | quote }}
+              readOnly: false
+          securityContext:
+            {{- include "ai.containerSecurityContext" . | nindent 12 }}
+      volumes:
+        - name: data
+          {{- if eq $p.mode "none" }}
+          emptyDir:
+            medium: ""
+          {{- else }}
+          persistentVolumeClaim:
+            claimName: {{ printf "%s-data" $r.name }}
+            readOnly: false
+          {{- end }}

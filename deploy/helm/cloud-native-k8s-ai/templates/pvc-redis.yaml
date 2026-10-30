@@ -1,0 +1,22 @@
+{{- $r := .Values.redis }}
+{{- if ne $r.persistence.mode "none" }}
+{{- $ctx := dict "root" $ "name" $r.name "component" "broker" "extra" $r.labels }}
+---
+# Redis AOF/RDB data; mode "none" keeps the queue in an emptyDir instead.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ printf "%s-data" $r.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ai.labels" $ctx | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- with $r.persistence.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $r.persistence.size }}
+{{- end }}

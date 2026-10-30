@@ -1,0 +1,76 @@
+{{- include "ai.validate" . }}
+{{- $api := .Values.api }}
+{{- $ctx := dict "root" $ "name" $api.name "component" "api" "extra" $api.labels }}
+{{- $scheme := "redis" }}
+{{- if .Values.autoscaling.enableTLS }}{{ $scheme = "rediss" }}{{ end }}
+{{- $redisHost := include "ai.serviceHost" (dict "name" .Values.redis.name "namespace" .Release.Namespace) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $api.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ai.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ int $api.replicas }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "ai.selectorLabels" $ctx | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 0
+  template:
+    metadata:
+      name: {{ $api.name }}
+      labels:
+        {{- include "ai.podLabels" $ctx | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "ai.podSecurityContext" . | nindent 8 }}
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: api
+          image: {{ include "ai.image" $api.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: {{ int $api.containerPort }}
+              protocol: TCP
+          env:
+            - name: QDRANT_HOST
+              value: {{ include "ai.serviceHost" (dict "name" .Values.qdrant.name "namespace" .Release.Namespace) }}
+            - name: QDRANT_HTTP_PORT
+              value: {{ .Values.qdrant.ports.rest | int | quote }}
+            - name: QDRANT_GRPC_PORT
+              value: {{ .Values.qdrant.ports.grpc | int | quote }}
+            - name: REDIS_URL
+              value: {{ printf "%s://%s:%d/%d" $scheme $redisHost (int .Values.redis.port) (int .Values.autoscaling.databaseIndex) }}
+            - name: REDIS_QUEUE
+              value: {{ .Values.autoscaling.listName | quote }}
+            - name: TMPDIR
+              value: /scratch
+            {{- with $api.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml $api.resources | nindent 12 }}
+          readinessProbe:
+            {{- include "ai.httpProbe" (dict "path" $api.probes.readinessPath "port" "http" "period" 10 "failures" 3) | nindent 12 }}
+          livenessProbe:
+            {{- include "ai.httpProbe" (dict "path" $api.probes.livenessPath "port" "http" "period" 20 "failures" 3) | nindent 12 }}
+          # Model loading can take minutes; liveness only starts once this succeeds.
+          startupProbe:
+            {{- include "ai.httpProbe" (dict "path" $api.probes.livenessPath "port" "http" "period" 5 "failures" 60) | nindent 12 }}
+          volumeMounts:
+            - name: scratch
+              mountPath: /scratch
+              readOnly: false
+          securityContext:
+            {{- include "ai.containerSecurityContext" . | nindent 12 }}
+      volumes:
+        - {{- include "ai.scratchVolume" . | nindent 10 }}

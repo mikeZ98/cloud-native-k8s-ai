@@ -72,6 +72,12 @@ scripts/audit-attribution.sh       # attribution audit of HEAD history (CI: --hi
   topology solver rejects any reachable flow the intent does not declare.
 - Core failures raise `core.errors` types (`ManifestRenderError`, `ResourceConstraintError`,
   `TopologyConflictError`), never a bare pydantic `ValidationError`.
+- The Helm chart must render exactly what the core generator emits: `tools.helm.lint_chart`
+  diffs every object (Helm release labels are the only tolerated drift) and runs the topology
+  solver. Change `templates/` and `core/` together; `networkpolicies.yaml` follows `intent()`.
+- Chart values are float64 in templates (as in Helm): wrap numbers with `int` before `printf
+  "%d"`, comparisons or arithmetic, and `quote` string args/env values. Every schema object
+  with `properties` sets `additionalProperties: false`; optional keys are read via `hasKey`.
 - Parse YAML with `yaml.safe_load` / `yaml.safe_load_all` only.
 - Tests are in-memory: no subprocesses, no network, no cluster. Lint YAML through the yamllint
   Python API rather than shelling out.

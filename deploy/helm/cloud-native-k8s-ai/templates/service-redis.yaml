@@ -1,0 +1,19 @@
+{{- $r := .Values.redis }}
+{{- $ctx := dict "root" $ "name" $r.name "component" "broker" "extra" $r.labels }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $r.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ai.labels" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "ai.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: redis
+      port: {{ int $r.port }}
+      targetPort: redis
+      protocol: TCP

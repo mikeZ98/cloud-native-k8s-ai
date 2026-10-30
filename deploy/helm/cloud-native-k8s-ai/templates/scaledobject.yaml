@@ -1,0 +1,43 @@
+{{- if .Values.autoscaling.enabled }}
+{{- $a := .Values.autoscaling }}
+{{- $api := .Values.api }}
+{{- $ctx := dict "root" $ "name" $api.name "component" "api" "extra" $api.labels }}
+{{- $redisHost := include "ai.serviceHost" (dict "name" .Values.redis.name "namespace" .Release.Namespace) }}
+---
+# KEDA owns the API replica count (through its HPA) while this object exists.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ $api.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ai.labels" $ctx | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $api.name }}
+  pollingInterval: {{ int $a.pollingInterval }}
+  cooldownPeriod: {{ int $a.cooldownPeriod }}
+  {{- if hasKey $a "idleReplicas" }}
+  idleReplicaCount: {{ int (get $a "idleReplicas") }}
+  {{- end }}
+  minReplicaCount: {{ int $a.minReplicas }}
+  maxReplicaCount: {{ int $a.maxReplicas }}
+  triggers:
+    - type: redis
+      name: redis-queue
+      metadata:
+        # KEDA trigger metadata is map[string]string: every value is quoted.
+        address: {{ printf "%s:%d" $redisHost (int .Values.redis.port) | quote }}
+        databaseIndex: {{ $a.databaseIndex | int | quote }}
+        enableTLS: {{ $a.enableTLS | quote }}
+        listName: {{ $a.listName | quote }}
+        listLength: {{ $a.listLength | int | quote }}
+        activationListLength: {{ $a.activationListLength | int | quote }}
+      {{- if hasKey $a "authenticationRef" }}
+      authenticationRef:
+        name: {{ get $a "authenticationRef" }}
+        kind: TriggerAuthentication
+      {{- end }}
+{{- end }}
