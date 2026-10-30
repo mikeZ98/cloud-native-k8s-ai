@@ -654,7 +654,10 @@ def test_rogue_pods_impersonating_the_api_selector_are_refused(docs: Docs) -> No
     rogue = copy.deepcopy(find(docs, "Deployment", REDIS))
     rogue["metadata"]["name"] = "rogue"
     rogue["spec"]["template"]["metadata"]["labels"] = dict(API_SELECTOR)  # same selector, no tier
-    assert codes(network([*docs, rogue], critic)) == {"qdrant-ingress-not-exclusive"}
+    assert codes(network([*docs, rogue], critic)) == {
+        "qdrant-ingress-not-exclusive",
+        "workload-selector-overlap",
+    }
 
 
 def test_container_ports_skip_malformed_entries() -> None:
@@ -1020,3 +1023,22 @@ def test_quota_ignores_daemonsets_and_unparseable_requests(docs: Docs) -> None:
     }  # fmt: skip
     container(docs)["resources"]["limits"]["cpu"] = "bogus"
     assert keda([*docs, agent, quota(**{"limits.cpu": "3"})]) == []
+
+
+def test_workload_selector_overlap_is_label_spoofing(docs: Docs) -> None:
+    rogue = copy.deepcopy(find(docs, "Deployment", REDIS))
+    rogue["metadata"]["name"] = "rogue"
+    rogue["spec"]["selector"]["matchLabels"] = {"rogue": "yes"}
+    rogue["spec"]["template"]["metadata"]["labels"] = {**API_SELECTOR, "rogue": "yes"}
+    (violation,) = network([*docs, rogue])
+    assert violation.code == "workload-selector-overlap"
+    assert violation.target == ObjectRef(kind="Deployment", namespace=NS, name="rogue")
+    assert violation.path == "/spec/template/metadata/labels"
+    assert not violation.remediation.automatic
+    elsewhere = copy.deepcopy(rogue)
+    elsewhere["metadata"]["namespace"] = "sandbox"  # policies only select their own namespace
+    assert "workload-selector-overlap" not in codes(network([*docs, elsewhere]))
+    expressions = copy.deepcopy(rogue)
+    expressions["spec"]["selector"] = {"matchExpressions": [{"key": "rogue", "operator": "Exists"}]}
+    expressions["spec"]["template"]["metadata"]["labels"] = {"rogue": "yes"}
+    assert network([*docs, expressions]) == []

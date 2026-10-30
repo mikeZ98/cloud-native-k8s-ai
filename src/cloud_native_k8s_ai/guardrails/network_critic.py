@@ -9,7 +9,9 @@ as rules without peers) together with the workloads they govern, and reports:
   external traffic);
 * Qdrant (vector-store) pods that are not isolated, or that admit anything other than
   the API pods' immutable selector on the Qdrant ports;
-* egress-isolated namespaces where pods cannot resolve DNS.
+* egress-isolated namespaces where pods cannot resolve DNS;
+* workloads whose pods carry another workload's selector labels: NetworkPolicy identity
+  is labels, so such pods inherit every flow granted to the original (label spoofing).
 
 Every finding carries a remediation; most are automatic (remove the permissive rule or
 peer, replace Qdrant's ingress with the canonical rule, create the missing default-deny
@@ -95,6 +97,7 @@ class NetworkCritic:
         governed = workloads(documents)
         # Qdrant first: its fix replaces whole rule lists, superseding generic removals.
         violations = self._qdrant(policies, governed, documents)
+        violations += self._impersonation(governed)
         for policy in policies:
             violations += self._rules(policy)
         for namespace in sorted({w.namespace for w in governed}):
@@ -269,6 +272,35 @@ class NetworkCritic:
                 decision=GuardrailDecision.WARN,
             )
         ]
+
+    # -- identity ----------------------------------------------------------------------
+    def _impersonation(self, governed: Sequence[Workload]) -> list[PolicyViolation]:
+        violations: list[PolicyViolation] = []
+        for owner in governed:
+            if not owner.selector_labels:
+                continue
+            for other in governed:
+                if other is owner or other.namespace != owner.namespace:
+                    continue
+                if not _matches(owner.selector_labels, other.pod_labels):
+                    continue
+                labels_path = f"{other.pod_path.removesuffix('/spec')}/metadata/labels"
+                violations.append(
+                    self._violation(
+                        "workload-selector-overlap",
+                        other.ref,
+                        labels_path,
+                        f"pods of {other.ref} carry the selector labels of {owner.ref} "
+                        f"{dict(owner.selector_labels)}: they inherit its traffic and every "
+                        "NetworkPolicy grant made to it",
+                        RemediationAdvice(
+                            summary="give every workload unique selector labels "
+                            "(app.kubernetes.io/name + app.kubernetes.io/component)",
+                            action="manual",
+                        ),
+                    )
+                )
+        return violations
 
     # -- Qdrant isolation ------------------------------------------------------------
     def _qdrant(
