@@ -332,6 +332,7 @@ collectors.
 | `src/cloud_native_k8s_ai/tools/helm.py` | chart loading, values validation, rendering, lint and core parity |
 | `src/cloud_native_k8s_ai/guardrails/` | catalog, workload/network/KEDA guardrails, remediation, engine |
 | `src/cloud_native_k8s_ai/api/` | FastAPI app, routes, middleware, problems, telemetry |
+| `src/cloud_native_k8s_ai/evals/` | seeded perturbation engine, evaluator, benchmark reports |
 | `src/cloud_native_k8s_ai/cli.py` | `k8s-ai` command line |
 | `deploy/helm/cloud-native-k8s-ai/` | production Helm chart (renders exactly the core bundle) |
 | `tests/` | hermetic suites: unit, contract, chart, API, guardrails, adversarial, property-based, concurrency, docs |

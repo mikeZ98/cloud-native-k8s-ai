@@ -7,9 +7,11 @@ Commands (``-`` reads stdin; results go to stdout unless ``-o`` is given):
 * ``admit FILE``      run the admission guardrails; ``--remediate`` runs the critic loop
 * ``chart lint``      lint the Helm chart for its defaults and ``--values`` overlays
 * ``chart render``    render the chart offline (``helm template`` equivalent)
+* ``eval``            perturbation benchmark: guardrail precision/recall, remediation, robustness
 * ``serve``           run the FastAPI control plane with uvicorn
 
-Exit codes: 0 allowed (ALLOW/WARN, lint clean), 1 denied or lint findings, 2 invalid input.
+Exit codes: 0 allowed (ALLOW/WARN, lint clean, eval thresholds met), 1 denied, lint findings
+or eval thresholds missed, 2 invalid input.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from cloud_native_k8s_ai import __version__
 from cloud_native_k8s_ai.api.config import DEFAULT_CHART_DIR, ApiSettings
 from cloud_native_k8s_ai.api.models import CompileResponse, InfraSpec
 from cloud_native_k8s_ai.core import K8sAiCoreError, compile_ai_stack, parse_untrusted_yaml
+from cloud_native_k8s_ai.evals import EvalConfig, EvalError, Evaluator
 from cloud_native_k8s_ai.guardrails import AdmissionEngine, GuardrailDecision
 from cloud_native_k8s_ai.tools.helm import (
     Chart,
@@ -152,6 +155,42 @@ def _cmd_chart_render(args: argparse.Namespace, io: _Io) -> int:
     return EXIT_OK
 
 
+def _thresholds(entries: Sequence[str]) -> dict[str, float]:
+    thresholds: dict[str, float] = {}
+    for entry in entries:
+        name, separator, value = entry.partition("=")
+        try:
+            thresholds[name.strip()] = float(value)
+        except ValueError:
+            separator = ""
+        if not separator or not name.strip():
+            raise CliError(f"--min expects METRIC=VALUE, got {entry!r}")
+    return thresholds
+
+
+def _cmd_eval(args: argparse.Namespace, io: _Io) -> int:
+    spec = _spec(io, args.spec) if args.spec else _reference(args.chart)
+    thresholds = _thresholds(args.min)
+    config = EvalConfig(
+        seed=args.seed,
+        samples=args.samples,
+        spec_samples=args.spec_samples,
+        epsilon=args.epsilon,
+        benign_ratio=args.benign_ratio,
+        remediate=not args.no_remediate,
+    )
+    report = Evaluator(spec.settings(), spec.stack).run(config)
+    try:
+        unmet = report.unmet(thresholds)
+    except KeyError as exc:
+        raise CliError(str(exc.args[0])) from exc
+    body = report.to_text() if args.format == "text" else json.dumps(report.to_wire(), indent=2)
+    io.write(body, args.output)
+    for line in unmet:
+        io.write(f"threshold missed: {line}", None)
+    return EXIT_DENIED if unmet else EXIT_OK
+
+
 def _cmd_serve(args: argparse.Namespace, io: _Io) -> int:  # noqa: ARG001 - uniform signature
     import uvicorn  # noqa: PLC0415 - only the server needs it
 
@@ -209,6 +248,20 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "render":
             command.add_argument("-o", "--output")
 
+    evaluate = add("eval", _cmd_eval, "benchmark the guardrails against seeded perturbations")
+    evaluate.add_argument("--spec", help="stack spec to evaluate (default: chart reference)")
+    evaluate.add_argument("--seed", type=int, default=0)
+    evaluate.add_argument("--samples", type=int, default=200)
+    evaluate.add_argument("--spec-samples", type=int, default=50)
+    evaluate.add_argument("--epsilon", type=float, default=0.3, help="perturbation budget 0..1")
+    evaluate.add_argument("--benign-ratio", type=float, default=0.25)
+    evaluate.add_argument("--no-remediate", action="store_true", help="skip the critic loop")
+    evaluate.add_argument("--format", choices=("text", "json"), default="text")
+    evaluate.add_argument(
+        "--min", action="append", default=[], metavar="METRIC=VALUE", help="quality gate"
+    )
+    evaluate.add_argument("-o", "--output")
+
     serve = add("serve", _cmd_serve, "run the control plane (uvicorn)")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
@@ -226,7 +279,7 @@ def main(
     io = _Io(stdin or sys.stdin, stdout or sys.stdout)
     try:
         result: int = args.handler(args, io)
-    except (CliError, K8sAiCoreError, ValidationError) as exc:
+    except (CliError, K8sAiCoreError, ValidationError, EvalError) as exc:
         (stderr or sys.stderr).write(f"k8s-ai: error: {exc}\n")
         return EXIT_INVALID
     return result

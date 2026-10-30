@@ -259,3 +259,19 @@ def test_readme_endpoints_exist() -> None:
     documented |= set(re.findall(r"localhost:8000(/[a-z0-9/_]+)", text(README)))
     assert documented
     assert documented <= routes, documented - routes
+
+
+def test_readme_eval_run_is_reproducible() -> None:
+    from cloud_native_k8s_ai.evals import EvalConfig, Evaluator  # noqa: PLC0415
+
+    block = re.search(
+        r"<!-- eval:begin -->\n```text\n\$ k8s-ai eval --seed 0 --samples 300 --spec-samples 100 "
+        r"--epsilon 0\.5\n(.*?)```\n<!-- eval:end -->",
+        text(README),
+        re.DOTALL,
+    )
+    assert block is not None
+    reference = _reference(CHART_DIR)
+    config = EvalConfig(seed=0, samples=300, spec_samples=100, epsilon=0.5)
+    report = Evaluator(reference.settings(), reference.stack).run(config)
+    assert block.group(1).strip() == report.to_text()

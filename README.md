@@ -65,6 +65,7 @@ uv run k8s-ai admit manifests.yaml --spec stack.yaml   # exit 0 admitted, 1 deni
 uv run k8s-ai admit broken.yaml --remediate -o fixed.yaml
 uv run k8s-ai chart lint --values prod-values.yaml # schema, contracts, parity, zero trust
 uv run k8s-ai chart render --namespace ai-system -o rendered.yaml   # helm template, offline
+uv run k8s-ai eval --epsilon 0.5 --min codes.f1=1 --min robustness=1   # perturbation benchmark
 ```
 
 Exit codes: `0` admitted (ALLOW or WARN) or lint clean, `1` denied or lint findings,
@@ -114,6 +115,57 @@ curl -sN localhost:8000/api/v1/stream/compile   # Server-Sent Events, one per ma
 
 Errors are RFC 7807 `application/problem+json` with the request's `X-Request-ID`;
 OpenAPI is served at `/docs`.
+
+## Evaluation: perturbation benchmark
+
+`k8s-ai eval` (or `cloud_native_k8s_ai.evals.Evaluator`) measures the guardrails instead
+of asserting them. A seeded perturbation engine mutates the compiled reference stack
+(label typos and spoofing, selector clones, namespace leaks, resource fuzzing and unit
+corruption, stripped or widened network policies, `securityContext` tampering) next to
+benign edits (replica changes, annotations, equivalent quantity spellings, reordering).
+Every operator carries exact ground truth, and operators that would interfere never
+compose, so scores are exact rather than approximate:
+
+- **detection** and **codes**: precision, recall, F1 and accuracy per sample and per
+  violation code (a missing or spurious code counts even when the sample was flagged);
+- **remediation**: critic-loop convergence, regression freedom (it never ends with a code
+  that was not there before) and untouched benign samples;
+- **robustness**: perturbed samples caught with every expected code and neutralized
+  without regression; **spec**: perturbed `AIStackSpec`s rejected by the contracts or the
+  compiler, benign ones compiled and admitted.
+
+`epsilon` (0..1) composes 1 to 5 operators per sample; the stream is BLAKE2b-seeded and
+identical on every platform. Reference run (`tests/test_docs.py` reproduces it exactly):
+
+<!-- eval:begin -->
+```text
+$ k8s-ai eval --seed 0 --samples 300 --spec-samples 100 --epsilon 0.5
+k8s-ai eval: 300 manifest samples (222 perturbed), 100 spec samples, seed 0, epsilon 0.5
+  detection.precision                1.0000
+  detection.recall                   1.0000
+  detection.f1                       1.0000
+  detection.accuracy                 1.0000
+  codes.precision                    1.0000
+  codes.recall                       1.0000
+  codes.f1                           1.0000
+  codes.accuracy                     1.0000
+  spec.precision                     1.0000
+  spec.recall                        1.0000
+  spec.f1                            1.0000
+  spec.accuracy                      1.0000
+  remediation.convergence_rate       1.0000
+  remediation.regression_free_rate   1.0000
+  remediation.full_remediation_rate  0.1486
+  benign.false_remediation_rate      0.0000
+  robustness                         1.0000
+  failures: 0
+```
+<!-- eval:end -->
+
+`full_remediation_rate` is low by design: pinning an image, sizing resources or fixing
+labels needs a human; everything automatic converged. A sweep over 8 seeds and budgets
+0 to 1 (12,000 samples) is exact as well; building the suite found a missing check
+(`selector-template-mismatch`).
 
 ## Security & admission guardrail runbook
 
@@ -177,9 +229,10 @@ HYPOTHESIS_PROFILE=deep uv run pytest tests/test_deep_eval.py   # long fuzzing r
 | [`src/cloud_native_k8s_ai/tools`](src/cloud_native_k8s_ai/tools) | offline Go-template engine and Helm tooling |
 | [`src/cloud_native_k8s_ai/guardrails`](src/cloud_native_k8s_ai/guardrails) | admission guardrails, code catalog, critic loop |
 | [`src/cloud_native_k8s_ai/api`](src/cloud_native_k8s_ai/api) | FastAPI control plane |
+| [`src/cloud_native_k8s_ai/evals`](src/cloud_native_k8s_ai/evals) | perturbation engine, evaluator, benchmark reports |
 | [`src/cloud_native_k8s_ai/cli.py`](src/cloud_native_k8s_ai/cli.py) | `k8s-ai` command line |
 | [`deploy/helm/cloud-native-k8s-ai`](deploy/helm/cloud-native-k8s-ai) | Helm chart with strict `values.schema.json` |
-| [`tests`](tests) | unit, contract, chart, API, guardrail, adversarial, property-based, concurrency and docs tests |
+| [`tests`](tests) | unit, contract, chart, API, guardrail, adversarial, property-based, concurrency, eval and docs tests |
 | [`docs`](docs) | architecture and security model |
 
 ## Contributing

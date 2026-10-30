@@ -56,7 +56,8 @@ pytest                             # hermetic, --disable-socket, cov ≥ 90% bra
 HYPOTHESIS_PROFILE=deep pytest tests/test_deep_eval.py   # long fuzzing run (default: derandomized)
 scripts/audit-attribution.sh       # attribution audit of HEAD history (CI: --history-only)
 uvicorn --factory cloud_native_k8s_ai.api:create_app --port 8000   # control plane (dev)
-k8s-ai --help                      # CLI: spec, compile, admit, chart lint|render, serve
+k8s-ai --help                      # CLI: spec, compile, admit, chart lint|render, eval, serve
+k8s-ai eval --min codes.f1=1 --min robustness=1   # perturbation benchmark (deterministic)
 ```
 
 ## Conventions
@@ -95,6 +96,9 @@ k8s-ai --help                      # CLI: spec, compile, admit, chart lint|rende
 - A new violation code goes into `guardrails/catalog.py` (decision + remediation kind) and the
   catalog table of `docs/security_model.md`; `tests/test_docs.py` also pins the architecture
   topology matrix, the threat matrix, the README commands/endpoints and the CI workflow.
+- Every eval perturbation declares exact ground truth (the codes `AdmissionEngine.for_stack`
+  must report) and its conflict slots; operators whose effects interact share a slot so
+  composed expectations stay an exact union (`tests/test_evals.py` checks each operator alone).
 - Parse YAML with `yaml.safe_load` / `yaml.safe_load_all` only.
 - Tests are in-memory: no subprocesses, no network, no cluster. Lint YAML through the yamllint
   Python API rather than shelling out.
