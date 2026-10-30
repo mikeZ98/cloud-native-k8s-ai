@@ -1171,3 +1171,15 @@ def test_typo_in_the_api_labels_also_breaks_its_network_grants(docs: Docs) -> No
     # The selector no longer selects its pods, and the typo'd pods are no longer "the API",
     # so Qdrant's API-only rule now admits no recognized API workload.
     assert report.codes() == {"selector-template-mismatch", "qdrant-ingress-not-exclusive"}
+
+
+def test_kubectl_lists_are_expanded_before_admission(docs: Docs) -> None:
+    container(docs)["securityContext"]["privileged"] = True
+    listed = {"apiVersion": "v1", "kind": "List", "items": [
+        {"apiVersion": "v1", "kind": "List", "items": docs[:5]}, *docs[5:]]}  # fmt: skip
+    report = AdmissionEngine().evaluate(render_yaml([listed]))
+    assert report.codes() == {"privileged-container"}  # not admitted as one unknown object
+    assert len(report.objects) == len(docs)
+    assert len(load_documents([listed])) == len(docs)
+    with pytest.raises(GuardrailError, match="must be a mapping"):
+        load_documents([{"kind": "List", "items": ["not-a-mapping"]}])

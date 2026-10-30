@@ -40,15 +40,28 @@ DEFAULT_GUARDRAILS: Final[tuple[Guardrail, ...]] = (
 
 
 def load_documents(manifests: Manifests) -> list[dict[str, Any]]:
-    """Raw documents from any accepted input; inputs are never mutated."""
+    """Raw documents from any accepted input; inputs are never mutated.
+
+    ``kind: List`` documents (what ``kubectl get -o yaml`` prints for several objects) are
+    expanded into their items: judged as one unknown object, a List full of privileged
+    workloads would otherwise be admitted.
+    """
     if isinstance(manifests, ManifestBundle):
         return manifests.to_documents()
-    if isinstance(manifests, str):
-        return parse_untrusted_yaml(manifests)
-    documents = list(manifests)
-    if not all(isinstance(d, Mapping) for d in documents):
-        raise GuardrailError("every manifest must be a mapping")
-    return [copy.deepcopy(dict(d)) for d in documents]
+    documents = parse_untrusted_yaml(manifests) if isinstance(manifests, str) else list(manifests)
+    return _expand_lists(documents)
+
+
+def _expand_lists(documents: Sequence[Any]) -> list[dict[str, Any]]:
+    expanded: list[dict[str, Any]] = []
+    for document in documents:
+        if not isinstance(document, Mapping):
+            raise GuardrailError("every manifest must be a mapping")
+        if document.get("kind") == "List" and isinstance(document.get("items"), list):
+            expanded += _expand_lists(document["items"])
+        else:
+            expanded.append(copy.deepcopy(dict(document)))
+    return expanded
 
 
 @dataclass(frozen=True)
