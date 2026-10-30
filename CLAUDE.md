@@ -92,6 +92,9 @@ k8s-ai --help                      # CLI: spec, compile, admit, chart lint|rende
   `RemediationAdvice`; automatic fixes are RFC 6902 patches or new objects, applied by the
   critic loop one patch per object per round. Core-compiled bundles must stay `ALLOW`
   (`/readyz` checks it).
+- A new violation code goes into `guardrails/catalog.py` (decision + remediation kind) and the
+  catalog table of `docs/security_model.md`; `tests/test_docs.py` also pins the architecture
+  topology matrix, the threat matrix, the README commands/endpoints and the CI workflow.
 - Parse YAML with `yaml.safe_load` / `yaml.safe_load_all` only.
 - Tests are in-memory: no subprocesses, no network, no cluster. Lint YAML through the yamllint
   Python API rather than shelling out.

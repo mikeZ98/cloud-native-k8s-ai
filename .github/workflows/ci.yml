@@ -1,0 +1,93 @@
+---
+# Hermetic quality gates. Network is used only to install the hash-locked dependencies
+# (uv.lock); every gate after that runs offline: pytest disables sockets, nothing talks
+# to a cluster, a registry or a cloud API. Actions are pinned by commit SHA, the token is
+# read-only and no secrets are read.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: 0.11.7
+  UV_PYTHON: "3.12"
+  UV_PYTHON_PREFERENCE: only-managed
+  UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/.cache/venv
+  UV_CACHE_DIR: ${{ github.workspace }}/.cache/uv
+  PYTHONHASHSEED: "0"
+  PYTHONDONTWRITEBYTECODE: "1"
+  HYPOTHESIS_PROFILE: hermetic
+  TZ: UTC
+  LC_ALL: C.UTF-8
+  KUBECONFIG: /dev/null
+
+jobs:
+  static-analysis:
+    name: Lint & static analysis
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - name: Install locked dependencies
+        run: uv sync --locked
+      - name: ruff (lint)
+        run: uv run --locked ruff check .
+      - name: ruff (format)
+        run: uv run --locked ruff format --check .
+      - name: mypy --strict
+        run: uv run --locked mypy
+      - name: bandit
+        run: uv run --locked bandit -c pyproject.toml -r src
+      - name: yamllint
+        run: uv run --locked yamllint --strict .
+
+  tests:
+    name: Hermetic tests (100% branch coverage)
+    needs: static-analysis
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - name: Install locked dependencies
+        run: uv sync --locked
+      - name: pytest (sockets disabled, coverage gate from pyproject.toml)
+        run: uv run --locked pytest
+
+  attribution:
+    name: Attribution audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Audit every commit (author, committer, message)
+        run: scripts/audit-attribution.sh --history-only
