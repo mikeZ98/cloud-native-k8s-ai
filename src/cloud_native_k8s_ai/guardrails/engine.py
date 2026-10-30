@@ -12,17 +12,23 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
-from cloud_native_k8s_ai.core import ManifestBundle, parse_untrusted_yaml
+from cloud_native_k8s_ai.core import (
+    AIStackGenerator,
+    AIStackSpec,
+    ManifestBundle,
+    parse_untrusted_yaml,
+)
 from cloud_native_k8s_ai.guardrails.admission import WorkloadGuardrail
 from cloud_native_k8s_ai.guardrails.keda_critic import KedaCritic
 from cloud_native_k8s_ai.guardrails.models import AdmissionReport, GuardrailError, RemediationResult
-from cloud_native_k8s_ai.guardrails.network_critic import NetworkCritic
+from cloud_native_k8s_ai.guardrails.network_critic import KUBE_SYSTEM, NetworkCritic
 from cloud_native_k8s_ai.guardrails.remediation import (
     DEFAULT_MAX_ROUNDS,
     Guardrail,
     critic_loop,
     evaluate_all,
 )
+from cloud_native_k8s_ai.schemas import InfraSettings
 
 type Manifests = ManifestBundle | str | Sequence[Mapping[str, Any]]
 
@@ -48,6 +54,24 @@ def load_documents(manifests: Manifests) -> list[dict[str, Any]]:
 @dataclass(frozen=True)
 class AdmissionEngine:
     guardrails: tuple[Guardrail, ...] = DEFAULT_GUARDRAILS
+
+    @classmethod
+    def for_stack(cls, settings: InfraSettings, spec: AIStackSpec) -> AdmissionEngine:
+        """Guardrails configured with a stack's own trust instead of generic defaults.
+
+        Trusted namespaces are the stack's ingress-controller and KEDA namespaces (plus
+        ``kube-system`` for DNS), and "the API" / "Qdrant" are its exact immutable
+        selectors, so a look-alike labelled ``component: api`` is never taken for the API.
+        """
+        generator = AIStackGenerator(settings, spec)
+        network = NetworkCritic(
+            trusted_namespaces=frozenset(
+                {KUBE_SYSTEM, spec.ingress_namespace, spec.keda_namespace}
+            ),
+            vector_store_labels=generator.qdrant_selector,
+            api_labels=generator.app_selector,
+        )
+        return cls((WorkloadGuardrail(), network, KedaCritic()))
 
     def evaluate(self, manifests: Manifests) -> AdmissionReport:
         documents = load_documents(manifests)

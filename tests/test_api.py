@@ -211,6 +211,12 @@ async def test_missing_chart_is_not_ready_but_compile_still_works(
         assert_problem(
             await http.post(VALIDATE_TOPOLOGY, json={"manifests": "---\n{}\n"}), 503, "unavailable"
         )
+        # Admission needs no chart: it falls back to the generic guardrail defaults.
+        allowed = await http.post(
+            f"{API_PREFIX}/validate/admission", json={"manifests": "---\nkind: ConfigMap\n"}
+        )
+        assert allowed.status_code == 200
+        assert allowed.json()["report"]["decision"] == "ALLOW"
     assert reference is None
 
 

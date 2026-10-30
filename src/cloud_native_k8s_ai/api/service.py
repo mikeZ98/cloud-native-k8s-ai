@@ -77,7 +77,7 @@ class ControlPlane:
             if not len(bundle):
                 raise ManifestRenderError("reference stack compiled to an empty bundle")
             checks["generator"] = CHECK_OK
-            AdmissionEngine().admit(bundle)
+            AdmissionEngine.for_stack(reference.settings(), reference.stack).admit(bundle)
             checks["guardrails"] = CHECK_OK
             report = lint_chart(self.chart)
             checks["chartLint"] = CHECK_OK if report.ok else f"{len(report.findings)} finding(s)"
@@ -124,9 +124,16 @@ class ControlPlane:
         report.raise_for_findings()
         return report
 
+    def admission_engine(self) -> AdmissionEngine:
+        """Guardrails trusting the reference stack's namespaces and selectors (generic
+        defaults when the reference chart is unavailable)."""
+        if self.reference is None:
+            return AdmissionEngine()
+        return AdmissionEngine.for_stack(self.reference.settings(), self.reference.stack)
+
     def admit(self, manifests: str, *, remediate: bool) -> AdmissionResponse:
         """Every admission guardrail; with ``remediate`` the critic loop runs first."""
-        engine = AdmissionEngine()
+        engine = self.admission_engine()
         try:
             result = engine.remediate(manifests) if remediate else None
             report = result.final if result is not None else engine.evaluate(manifests)

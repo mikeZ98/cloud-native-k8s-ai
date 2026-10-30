@@ -1042,3 +1042,31 @@ def test_workload_selector_overlap_is_label_spoofing(docs: Docs) -> None:
     expressions["spec"]["selector"] = {"matchExpressions": [{"key": "rogue", "operator": "Exists"}]}
     expressions["spec"]["template"]["metadata"]["labels"] = {"rogue": "yes"}
     assert network([*docs, expressions]) == []
+
+
+def test_engine_for_stack_trusts_the_stack_not_generic_defaults() -> None:
+    spec = stack(ingress_namespace="gateway", keda_namespace="autoscalers")
+    custom = compile_ai_stack(InfraSettings(), spec)
+    generic = AdmissionEngine().evaluate(custom)
+    assert codes(list(generic.violations)) == {"cross-namespace-ingress"}  # gateway, autoscalers
+    scoped = AdmissionEngine.for_stack(InfraSettings(), spec)
+    assert scoped.evaluate(custom).decision is GuardrailDecision.ALLOW
+    # Pinned to the exact API selector, a look-alike "component: api" workload is not the API:
+    docs = copy.deepcopy(custom.to_documents())
+    lookalike = copy.deepcopy(find(docs, "Deployment", REDIS))
+    lookalike["metadata"]["name"] = "lookalike"
+    lookalike["spec"]["selector"]["matchLabels"] = {"app.kubernetes.io/name": "lookalike"}
+    lookalike["spec"]["template"]["metadata"]["labels"] = {
+        "app.kubernetes.io/name": "lookalike",
+        "app.kubernetes.io/component": "api",
+    }
+    _qdrant_rule(docs)["from"].append(
+        {"podSelector": {"matchLabels": {"app.kubernetes.io/name": "lookalike"}}}
+    )
+    label_based = NetworkCritic(
+        trusted_namespaces=frozenset({"kube-system", "gateway", "autoscalers"})
+    )
+    generic_identity = AdmissionEngine((WorkloadGuardrail(), label_based, KedaCritic()))
+    assert generic_identity.evaluate([*docs, lookalike]).allowed  # any "component: api" pod
+    report = scoped.evaluate([*docs, lookalike])
+    assert report.codes() == {"qdrant-ingress-not-exclusive"}

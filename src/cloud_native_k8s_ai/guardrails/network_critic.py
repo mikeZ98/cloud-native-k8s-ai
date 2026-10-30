@@ -49,6 +49,7 @@ from cloud_native_k8s_ai.schemas import DNS_PORT, default_deny_policy, dns_egres
 
 POLICY: Final = "network-zero-trust"
 NAMESPACE_NAME_LABEL: Final = "kubernetes.io/metadata.name"
+KUBE_SYSTEM: Final = "kube-system"
 _DIRECTIONS: Final = (("Ingress", "ingress", "from"), ("Egress", "egress", "to"))
 
 
@@ -75,7 +76,7 @@ def _selects(policy: Mapping[str, Any], workload: Workload) -> bool:
 @dataclass(frozen=True, eq=False)
 class NetworkCritic:
     name: str = POLICY
-    trusted_namespaces: frozenset[str] = frozenset({"kube-system", "ingress-nginx", "keda"})
+    trusted_namespaces: frozenset[str] = frozenset({KUBE_SYSTEM, "ingress-nginx", "keda"})
     """Namespaces a peer may select besides the policy's own."""
     allowed_ingress_cidrs: tuple[str, ...] = ()
     allowed_egress_cidrs: tuple[str, ...] = ()
