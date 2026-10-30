@@ -1590,3 +1590,14 @@ def test_invalid_settings_rejected(monkeypatch: pytest.MonkeyPatch, var: str, va
 def test_settings_forbid_unknown_fields() -> None:
     with pytest.raises(ValidationError, match="Extra inputs"):
         InfraSettings(namspace="typo")  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("mode", ["none", "rdb", "aof", "rdb+aof"])
+def test_redis_persistence_round_trips_in_every_mode(mode: str) -> None:
+    size = None if mode == "none" else "1Gi"
+    persistence = RedisPersistence.from_wire({"mode": mode, "volumeSize": size})
+    wire = persistence.to_wire()
+    assert wire["volumeSize"] == size  # null stays explicit, never dropped
+    assert RedisPersistence.from_wire(wire) == persistence
+    assert persistence.model_dump(by_alias=False)["volume_size"] == size
+    assert RedisPersistence() == RedisPersistence.from_wire({})

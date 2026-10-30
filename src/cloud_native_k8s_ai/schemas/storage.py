@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 from itertools import combinations
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
-from pydantic import Field, model_validator
+from pydantic import (
+    Field,
+    SerializationInfo,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 
 from cloud_native_k8s_ai.schemas._base import (
     AbsolutePath,
@@ -172,6 +178,17 @@ class RedisPersistence(K8sModel):
     )
     volume_size: StorageQuantity | None = "8Gi"
     storage_class_name: DNS1123Subdomain | None = None
+
+    @model_serializer(mode="wrap")
+    def _explicit_no_volume(
+        self, handler: SerializerFunctionWrapHandler, info: SerializationInfo
+    ) -> Any:
+        """Keep ``volumeSize: null`` on the wire: dropping it (``exclude_none``) would let
+        the ``8Gi`` default reappear on parsing and fail ``mode: none``."""
+        data = handler(self)
+        if self.volume_size is None and not {"volumeSize", "volume_size"} & set(data):
+            data["volume_size" if info.by_alias is False else "volumeSize"] = None
+        return data
 
     @property
     def rdb(self) -> bool:
