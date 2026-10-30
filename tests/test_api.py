@@ -30,7 +30,6 @@ from cloud_native_k8s_ai.api import service as service_module
 from cloud_native_k8s_ai.api.middleware import RequestContextMiddleware, route_template
 from cloud_native_k8s_ai.api.problems import PROBLEM_JSON, _handle_core
 from cloud_native_k8s_ai.api.routes.compile import sse, wants_yaml
-from cloud_native_k8s_ai.api.service import reject_yaml_aliases
 from cloud_native_k8s_ai.api.telemetry import (
     LOGGER_NAME,
     REQUEST_ID,
@@ -44,8 +43,10 @@ from cloud_native_k8s_ai.core import (
     ManifestRenderError,
     TopologyConflictError,
     Violation,
+    reject_yaml_aliases,
     render_yaml,
 )
+from cloud_native_k8s_ai.guardrails import GuardrailError
 from cloud_native_k8s_ai.tools.helm import ChartValuesError
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -162,7 +163,13 @@ async def test_readyz_reports_every_self_check(client: httpx.AsyncClient) -> Non
     assert response.status_code == 200
     assert response.json() == {
         "status": "ready",
-        "checks": {"chart": "ok", "schemas": "ok", "generator": "ok", "chartLint": "ok"},
+        "checks": {
+            "chart": "ok",
+            "schemas": "ok",
+            "generator": "ok",
+            "guardrails": "ok",
+            "chartLint": "ok",
+        },
     }
 
 
@@ -195,7 +202,9 @@ async def test_missing_chart_is_not_ready_but_compile_still_works(
         assert ready.status_code == 503
         checks = ready.json()["checks"]
         assert checks["chart"].startswith("ChartError: ")
-        assert checks["schemas"] == checks["generator"] == checks["chartLint"] == "skipped"
+        assert {checks[k] for k in ("schemas", "generator", "guardrails", "chartLint")} == {
+            "skipped"
+        }
         body = assert_problem(await http.get(STREAM), 503, "unavailable")
         assert "K8SAI_API_CHART_DIR" in body["detail"]
         assert_problem(await http.post(VALIDATE_CHART, json={}), 503, "unavailable")
@@ -848,3 +857,151 @@ async def test_openapi_documents_bodies_and_resolves_every_ref(client: httpx.Asy
     }
     assert unresolved == set()
     assert (await client.get("/openapi.json")).json() == document  # cached, stable
+
+
+# ---------------------------------------------------------------------------
+# Admission guardrails
+# ---------------------------------------------------------------------------
+VALIDATE_ADMISSION = f"{API_PREFIX}/validate/admission"
+
+
+def _edit(manifests: str, change: Any) -> str:
+    documents = list(yaml.safe_load_all(manifests))
+    change(documents)
+    return render_yaml(documents)
+
+
+def _drop_default_deny(documents: list[dict[str, Any]]) -> None:
+    documents[:] = [d for d in documents if d["metadata"]["name"] != "default-deny-all"]
+
+
+def _deny_and_latest(documents: list[dict[str, Any]]) -> None:
+    _drop_default_deny(documents)
+    _latest_api_image(documents)
+
+
+def _latest_api_image(documents: list[dict[str, Any]]) -> None:
+    for document in documents:
+        if document["kind"] == "Deployment" and document["metadata"]["name"] == "inference-api":
+            document["spec"]["template"]["spec"]["containers"][0]["image"] = "ghcr.io/x/api:latest"
+
+
+async def test_admission_allows_compiled_manifests(
+    app: FastAPI, client: httpx.AsyncClient, manifests: str
+) -> None:
+    for response in (
+        await client.post(VALIDATE_ADMISSION, json={"manifests": manifests}),
+        await client.post(
+            VALIDATE_ADMISSION, content=manifests, headers={"content-type": "application/yaml"}
+        ),
+    ):
+        assert response.status_code == 200
+        body = response.json()
+        assert body["report"]["decision"] == "ALLOW"
+        assert body["report"]["violations"] == []
+        assert len(body["report"]["objects"]) == 15
+        assert "remediation" not in body
+    assert sample(app, "validations_total", {"target": "admission", "outcome": "allow"}) == 2
+
+
+async def test_admission_warnings_still_admit(client: httpx.AsyncClient, manifests: str) -> None:
+    def aggressive(documents: list[dict[str, Any]]) -> None:
+        next(d for d in documents if d["kind"] == "ScaledObject")["spec"]["pollingInterval"] = 2
+
+    response = await client.post(
+        VALIDATE_ADMISSION, json={"manifests": _edit(manifests, aggressive)}
+    )
+    assert response.status_code == 200
+    report = response.json()["report"]
+    assert report["decision"] == "WARN"
+    assert [v["code"] for v in report["violations"]] == ["keda-polling-too-aggressive"]
+
+
+async def test_admission_denial_is_a_structured_problem(
+    app: FastAPI, client: httpx.AsyncClient, manifests: str
+) -> None:
+    broken = _edit(manifests, _deny_and_latest)
+    problem = assert_problem(
+        await client.post(VALIDATE_ADMISSION, json={"manifests": broken}), 422, "admission-denied"
+    )
+    assert problem["decision"] == "DENY"
+    assert problem["detail"] == "admission denied: 3 blocking violation(s)"
+    violations = {v["code"]: v for v in problem["violations"]}
+    assert set(violations) == {
+        "image-latest-tag",
+        "missing-default-deny-ingress",
+        "missing-default-deny-egress",
+    }
+    image = violations["image-latest-tag"]
+    assert image["target"] == {
+        "kind": "Deployment",
+        "namespace": "ai-system",
+        "name": "inference-api",
+    }
+    assert image["path"] == "/spec/template/spec/containers/0/image"
+    assert image["remediation"]["action"] == "manual"
+    deny = violations["missing-default-deny-ingress"]["remediation"]
+    assert deny["action"] == "create"
+    assert deny["document"]["metadata"]["name"] == "default-deny-all"
+    assert "remediation" not in problem
+    assert sample(app, "validations_total", {"target": "admission", "outcome": "deny"}) == 1
+
+
+async def test_admission_remediation_fixes_what_it_can(
+    client: httpx.AsyncClient, manifests: str
+) -> None:
+    fixable = _edit(manifests, _drop_default_deny)
+    response = await client.post(
+        VALIDATE_ADMISSION, params={"remediate": "true"}, json={"manifests": fixable}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["report"]["decision"] == "ALLOW"
+    remediation = body["remediation"]
+    assert remediation["initialDecision"] == "DENY"
+    assert remediation["converged"] is True
+    assert remediation["rounds"][0]["applied"] == [
+        "missing-default-deny-ingress Namespace -/ai-system"
+    ]
+    names = {d["metadata"]["name"] for d in yaml.safe_load_all(remediation["manifests"])}
+    assert "default-deny-all" in names
+    # What the critic loop produced passes the topology solver as well.
+    topology = await client.post(VALIDATE_TOPOLOGY, json={"manifests": remediation["manifests"]})
+    assert topology.status_code == 200
+
+    manual = _edit(manifests, _deny_and_latest)
+    response = await client.post(
+        VALIDATE_ADMISSION, params={"remediate": "true"}, json={"manifests": manual}
+    )
+    problem = assert_problem(response, 422, "admission-denied")
+    assert [v["code"] for v in problem["violations"]] == ["image-latest-tag"]
+    assert problem["remediation"]["converged"] is True
+    assert "default-deny-all" in problem["remediation"]["manifests"]
+
+
+@pytest.mark.parametrize(
+    ("content", "status", "slug"),
+    [
+        ("---\n- just\n- a list\n", 400, "manifest-render"),
+        ("a: &x 1\nb: *x\n", 400, "manifest-render"),
+        ("", 422, "invalid-request"),
+    ],
+)
+async def test_admission_rejects_unparseable_input(
+    app: FastAPI, client: httpx.AsyncClient, content: str, status: int, slug: str
+) -> None:
+    response = await client.post(
+        VALIDATE_ADMISSION, content=content, headers={"content-type": "application/yaml"}
+    )
+    assert_problem(response, status, slug)
+    if status == 400:
+        assert sample(app, "validations_total", {"target": "admission", "outcome": "error"}) == 1
+
+
+def test_guardrail_errors_map_to_400() -> None:
+    request = Request(
+        {"type": "http", "path": "/x", "headers": [], "query_string": b"", "server": ("h", 80)}
+    )
+    response = _handle_core(request, GuardrailError("cannot evaluate"))
+    assert response.status_code == 400
+    assert json.loads(bytes(response.body))["type"].endswith(":guardrail-error")

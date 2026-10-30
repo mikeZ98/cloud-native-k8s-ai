@@ -12,10 +12,13 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-import yaml
-
 from cloud_native_k8s_ai.api.config import ApiSettings
-from cloud_native_k8s_ai.api.models import InfraSpec, TopologyResponse
+from cloud_native_k8s_ai.api.models import (
+    AdmissionResponse,
+    InfraSpec,
+    RemediationSummary,
+    TopologyResponse,
+)
 from cloud_native_k8s_ai.api.problems import ControlPlaneUnavailableError
 from cloud_native_k8s_ai.api.telemetry import Metrics
 from cloud_native_k8s_ai.core import (
@@ -25,7 +28,9 @@ from cloud_native_k8s_ai.core import (
     ManifestRenderError,
     TopologySolver,
     compile_ai_stack,
+    reject_yaml_aliases,
 )
+from cloud_native_k8s_ai.guardrails import AdmissionDeniedError, AdmissionEngine
 from cloud_native_k8s_ai.schemas import NetworkPolicy
 from cloud_native_k8s_ai.tools.helm import Chart, LintReport, Release, lint_chart, validate_values
 
@@ -34,16 +39,6 @@ CHECK_OK = "ok"
 
 def _failure(exc: Exception) -> str:
     return f"{type(exc).__name__}: {str(exc).splitlines()[0] if str(exc) else ''}".rstrip(": ")
-
-
-def reject_yaml_aliases(text: str) -> None:
-    """Refuse anchors/aliases: expanding them on serialization is a billion-laughs bomb."""
-    try:
-        for event in yaml.parse(text, Loader=yaml.SafeLoader):
-            if isinstance(event, yaml.AliasEvent) or getattr(event, "anchor", None):
-                raise ManifestRenderError("YAML anchors and aliases are not accepted")
-    except yaml.YAMLError as exc:
-        raise ManifestRenderError(f"invalid YAML: {exc}") from exc
 
 
 @dataclass
@@ -62,7 +57,9 @@ class ControlPlane:
         return plane
 
     def _self_check(self) -> dict[str, str]:
-        checks = dict.fromkeys(("chart", "schemas", "generator", "chartLint"), "skipped")
+        checks = dict.fromkeys(
+            ("chart", "schemas", "generator", "guardrails", "chartLint"), "skipped"
+        )
         try:
             self.chart = Chart.load(self.settings.chart_dir)
             checks["chart"] = CHECK_OK
@@ -76,9 +73,12 @@ class ControlPlane:
                 raise ManifestRenderError("reference stack does not survive a wire round trip")
             self.reference = reference
             checks["schemas"] = CHECK_OK
-            if not len(compile_ai_stack(reference.settings(), reference.stack)):
+            bundle = compile_ai_stack(reference.settings(), reference.stack)
+            if not len(bundle):
                 raise ManifestRenderError("reference stack compiled to an empty bundle")
             checks["generator"] = CHECK_OK
+            AdmissionEngine().admit(bundle)
+            checks["guardrails"] = CHECK_OK
             report = lint_chart(self.chart)
             checks["chartLint"] = CHECK_OK if report.ok else f"{len(report.findings)} finding(s)"
         except K8sAiCoreError as exc:
@@ -123,6 +123,21 @@ class ControlPlane:
         self.metrics.validations.labels("chart", "pass" if report.ok else "fail").inc()
         report.raise_for_findings()
         return report
+
+    def admit(self, manifests: str, *, remediate: bool) -> AdmissionResponse:
+        """Every admission guardrail; with ``remediate`` the critic loop runs first."""
+        engine = AdmissionEngine()
+        try:
+            result = engine.remediate(manifests) if remediate else None
+            report = result.final if result is not None else engine.evaluate(manifests)
+        except K8sAiCoreError:
+            self.metrics.validations.labels("admission", "error").inc()
+            raise
+        self.metrics.validations.labels("admission", report.decision.lower()).inc()
+        if not report.allowed:
+            raise AdmissionDeniedError(report, result)
+        summary = None if result is None else RemediationSummary.from_result(result)
+        return AdmissionResponse(report=report, remediation=summary)
 
     def validate_topology(self, manifests: str, spec: InfraSpec | None) -> TopologyResponse:
         spec = spec or self.require_reference()[1]

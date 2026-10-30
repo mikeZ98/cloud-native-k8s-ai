@@ -8,6 +8,12 @@ from typing import Any, Literal
 from pydantic import Field
 
 from cloud_native_k8s_ai.core import AIStackSpec, ManifestBundle
+from cloud_native_k8s_ai.guardrails import (
+    AdmissionReport,
+    GuardrailDecision,
+    RemediationResult,
+    RemediationRound,
+)
 from cloud_native_k8s_ai.schemas import DNS1123Label, InfraSettings, K8sModel
 from cloud_native_k8s_ai.schemas.settings import DEFAULT_NAMESPACE, Environment
 from cloud_native_k8s_ai.tools.helm import Release, ReleaseName
@@ -81,6 +87,36 @@ class TopologyResponse(K8sModel):
     workloads: int
     reachable: tuple[str, ...]
     """Every flow the policies allow between the probed endpoints."""
+
+
+class AdmissionRequest(K8sModel):
+    """Multi-document manifest YAML to run through every admission guardrail."""
+
+    manifests: str = Field(min_length=1)
+
+
+class RemediationSummary(K8sModel):
+    initial_decision: GuardrailDecision
+    rounds: tuple[RemediationRound, ...]
+    converged: bool
+    manifests: str
+    """The manifests after every automatic remediation, as multi-document YAML."""
+
+    @classmethod
+    def from_result(cls, result: RemediationResult) -> RemediationSummary:
+        return cls(
+            initial_decision=result.initial.decision,
+            rounds=result.rounds,
+            converged=result.converged,
+            manifests=result.to_yaml(),
+        )
+
+
+class AdmissionResponse(K8sModel):
+    """ALLOW or WARN; a DENY is a 422 ``admission-denied`` problem instead."""
+
+    report: AdmissionReport
+    remediation: RemediationSummary | None = None
 
 
 class HealthResponse(K8sModel):

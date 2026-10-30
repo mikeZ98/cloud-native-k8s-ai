@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Final
+from functools import partial
+from typing import Annotated, Any, Final
 
 import anyio
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from cloud_native_k8s_ai.api.deps import Plane, component, json_body, parse_model, read_body
 from cloud_native_k8s_ai.api.models import (
+    AdmissionRequest,
+    AdmissionResponse,
     ChartValidationRequest,
     ChartValidationResponse,
     TopologyRequest,
@@ -40,6 +43,9 @@ def _responses(model: type[BaseModel], failure: str) -> dict[int | str, dict[str
 _CHART_RESPONSES: Final = _responses(
     ChartValidationResponse, "Schema, contract, render, parity or zero-trust findings"
 )
+_ADMISSION_RESPONSES: Final = _responses(
+    AdmissionResponse, "Admission denied: violations with remediation advice"
+)
 _TOPOLOGY_RESPONSES: Final = _responses(
     TopologyResponse, "Zero-trust violations (default deny, isolation, unauthorized flows)"
 )
@@ -63,6 +69,18 @@ def _is_yaml(content_type: str) -> bool:
     return content_type.split(";", maxsplit=1)[0].strip().lower() in YAML_MEDIA_TYPES
 
 
+async def _manifests_body[M: BaseModel](request: Request, plane: Plane, model: type[M]) -> M:
+    """``model`` from a JSON body, or from a raw YAML body as its ``manifests`` field."""
+    raw = await read_body(request, plane.settings.max_body_bytes)
+    if _is_yaml(request.headers.get("content-type", "")):
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(400, "manifests must be UTF-8 encoded") from exc
+        raw = json.dumps({"manifests": text}).encode()
+    return parse_model(model, raw)
+
+
 @router.post(
     "/topology",
     summary="Run the zero-trust topology solver on submitted manifests",
@@ -70,14 +88,25 @@ def _is_yaml(content_type: str) -> bool:
     responses=_TOPOLOGY_RESPONSES,
 )
 async def validate_topology(request: Request, plane: Plane) -> JSONResponse:
-    raw = await read_body(request, plane.settings.max_body_bytes)
-    if _is_yaml(request.headers.get("content-type", "")):
-        try:
-            text = raw.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise HTTPException(400, "manifests must be UTF-8 encoded") from exc
-        body = parse_model(TopologyRequest, json.dumps({"manifests": text}).encode())
-    else:
-        body = parse_model(TopologyRequest, raw)
+    body = await _manifests_body(request, plane, TopologyRequest)
     result = await anyio.to_thread.run_sync(plane.validate_topology, body.manifests, body.spec)
+    return JSONResponse(result.to_wire())
+
+
+@router.post(
+    "/admission",
+    summary="Run the admission guardrails (workload security, zero trust, autoscaling)",
+    openapi_extra=json_body(AdmissionRequest, YAML_MEDIA_TYPE),
+    responses=_ADMISSION_RESPONSES,
+)
+async def validate_admission(
+    request: Request,
+    plane: Plane,
+    *,
+    remediate: Annotated[bool, Query(description="Run the auto-remediation loop first")] = False,
+) -> JSONResponse:
+    body = await _manifests_body(request, plane, AdmissionRequest)
+    result = await anyio.to_thread.run_sync(
+        partial(plane.admit, body.manifests, remediate=remediate)
+    )
     return JSONResponse(result.to_wire())

@@ -28,7 +28,9 @@ from cloud_native_k8s_ai.core.generator import (
     build_ai_stack,
     canonical,
     compile_ai_stack,
+    parse_untrusted_yaml,
     parse_yaml,
+    reject_yaml_aliases,
     render_yaml,
 )
 from cloud_native_k8s_ai.core.topology import (
@@ -72,7 +74,9 @@ __all__ = [
     "check_policy",
     "compile_ai_stack",
     "desired_replicas",
+    "parse_untrusted_yaml",
     "parse_yaml",
+    "reject_yaml_aliases",
     "render_yaml",
     "service_host",
 ]

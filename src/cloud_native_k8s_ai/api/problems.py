@@ -17,6 +17,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from cloud_native_k8s_ai.api.models import RemediationSummary
 from cloud_native_k8s_ai.api.telemetry import REQUEST_ID
 from cloud_native_k8s_ai.core import (
     K8sAiCoreError,
@@ -24,6 +25,7 @@ from cloud_native_k8s_ai.core import (
     ResourceConstraintError,
     TopologyConflictError,
 )
+from cloud_native_k8s_ai.guardrails import AdmissionDeniedError, GuardrailError
 from cloud_native_k8s_ai.tools.helm import ChartLintError, ChartValuesError
 
 PROBLEM_JSON: Final = "application/problem+json"
@@ -67,6 +69,8 @@ class _CoreProblem:
 
 # Most specific first: Starlette resolves handlers along the exception's MRO.
 _CORE_PROBLEMS: Final[Sequence[tuple[type[K8sAiCoreError], _CoreProblem]]] = (
+    (AdmissionDeniedError, _CoreProblem(422, "admission-denied", "Admission denied")),
+    (GuardrailError, _CoreProblem(400, "guardrail-error", "Guardrails could not evaluate")),
     (ChartValuesError, _CoreProblem(422, "invalid-chart-values", "Chart values are invalid")),
     (ChartLintError, _CoreProblem(422, "chart-lint-failed", "Chart lint failed")),
     (TopologyConflictError, _CoreProblem(422, "topology-conflict", "Zero-trust topology violated")),
@@ -84,6 +88,15 @@ _CORE_PROBLEMS: Final[Sequence[tuple[type[K8sAiCoreError], _CoreProblem]]] = (
 
 def _core_extensions(exc: K8sAiCoreError) -> dict[str, Any]:
     match exc:
+        case AdmissionDeniedError():
+            extensions: dict[str, Any] = {
+                "decision": exc.report.decision.value,
+                "violations": [v.to_wire() for v in exc.report.violations],
+            }
+            if exc.remediation is not None:
+                summary = RemediationSummary.from_result(exc.remediation)
+                extensions["remediation"] = summary.to_wire()
+            return extensions
         case ChartValuesError():
             return {"problems": list(exc.problems)}
         case ChartLintError():
@@ -97,7 +110,9 @@ def _core_extensions(exc: K8sAiCoreError) -> dict[str, Any]:
 def _core_detail(exc: K8sAiCoreError) -> str:
     """List-carrying errors put the list in an extension; keep only the headline."""
     text = str(exc)
-    if isinstance(exc, ChartValuesError | ChartLintError | TopologyConflictError):
+    if isinstance(
+        exc, AdmissionDeniedError | ChartValuesError | ChartLintError | TopologyConflictError
+    ):
         return text.splitlines()[0].removesuffix(":")
     return text
 

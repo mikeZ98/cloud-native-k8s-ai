@@ -178,6 +178,22 @@ def parse_yaml(text: str) -> list[dict[str, Any]]:
     return parsed
 
 
+def reject_yaml_aliases(text: str) -> None:
+    """Refuse anchors/aliases: expanding them on serialization is a billion-laughs bomb."""
+    try:
+        for event in yaml.parse(text, Loader=yaml.SafeLoader):
+            if isinstance(event, yaml.AliasEvent) or getattr(event, "anchor", None):
+                raise ManifestRenderError("YAML anchors and aliases are not accepted")
+    except yaml.YAMLError as exc:
+        raise ManifestRenderError(f"invalid YAML: {exc}") from exc
+
+
+def parse_untrusted_yaml(text: str) -> list[dict[str, Any]]:
+    """``parse_yaml`` for client-supplied text: anchors and aliases are refused first."""
+    reject_yaml_aliases(text)
+    return parse_yaml(text)
+
+
 @contextmanager
 def _rendering(what: str) -> Iterator[None]:
     try:
