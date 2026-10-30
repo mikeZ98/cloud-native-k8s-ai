@@ -20,7 +20,7 @@ from cloud_native_k8s_ai.schemas._base import (
     Port,
     PortName,
     Protocol,
-    network,
+    ip_network,
 )
 from cloud_native_k8s_ai.schemas.storage import QDRANT_GRPC_PORT, QDRANT_REST_PORT
 
@@ -37,9 +37,9 @@ class IPBlock(K8sModel):
 
     @model_validator(mode="after")
     def _exceptions_inside_block(self) -> Self:
-        outer = network(self.cidr)
+        outer = ip_network(self.cidr)
         for item in self.except_:
-            inner = network(item)
+            inner = ip_network(item)
             if inner.version != outer.version or not inner.subnet_of(outer):  # type: ignore[arg-type]
                 raise ValueError(f"except {item} is not inside {self.cidr}")
             if inner == outer:

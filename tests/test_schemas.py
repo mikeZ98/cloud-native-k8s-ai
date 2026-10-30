@@ -16,6 +16,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
+from cloud_native_k8s_ai import schemas
 from cloud_native_k8s_ai.schemas import (
     DEFAULT_NAMESPACE,
     QDRANT_GRPC_PORT,
@@ -793,9 +794,30 @@ def test_rolling_update_bounds(kwargs: dict[str, Any], message: str) -> None:
 
 
 def test_recreate_strategy_forbids_rolling_update() -> None:
-    assert DeploymentStrategy(type="Recreate", rolling_update=None).to_k8s() == {"type": "Recreate"}
+    recreate = DeploymentStrategy(type="Recreate")
+    assert recreate.to_k8s() == {"type": "Recreate"}
     with pytest.raises(ValidationError, match="Recreate"):
-        DeploymentStrategy(type="Recreate")
+        DeploymentStrategy(type="Recreate", rolling_update=RollingUpdate())
+
+
+@pytest.mark.parametrize(
+    "strategy",
+    [
+        DeploymentStrategy(type="Recreate"),
+        DeploymentStrategy(),
+        DeploymentStrategy(rolling_update=RollingUpdate(max_surge=1, max_unavailable="10%")),
+    ],
+)
+def test_strategy_roundtrip(strategy: DeploymentStrategy) -> None:
+    assert DeploymentStrategy.from_wire(strategy.to_k8s()) == strategy
+    spec = deployment(strategy=strategy).spec
+    assert DeploymentSpec.from_wire(spec.to_k8s()) == spec
+
+
+def test_ip_network_helper_is_exported_not_shadowed() -> None:
+    # ``schemas.network`` is a submodule; the helper must not share its name.
+    assert callable(schemas.ip_network)
+    assert schemas.ip_network("10.0.0.0/8").prefixlen == 8
 
 
 def test_service_invariants() -> None:

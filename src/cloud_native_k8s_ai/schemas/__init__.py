@@ -22,8 +22,8 @@ from cloud_native_k8s_ai.schemas._base import (
     PortName,
     StorageQuantity,
     cpu_millicores,
+    ip_network,
     memory_bytes,
-    network,
 )
 from cloud_native_k8s_ai.schemas.cluster import (
     FASTAPI_DEFAULT_PORT,
@@ -212,7 +212,7 @@ __all__ = [
     "cpu_millicores",
     "default_deny_policy",
     "dns_egress_policy",
+    "ip_network",
     "memory_bytes",
-    "network",
     "qdrant_ingress_policy",
 ]

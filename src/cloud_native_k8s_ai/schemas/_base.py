@@ -206,20 +206,20 @@ ImageRef = Annotated[str, AfterValidator(_pinned_image)]
 # ---------------------------------------------------------------------------
 # CIDRs
 # ---------------------------------------------------------------------------
-def network(cidr: str) -> ipaddress.IPv4Network | ipaddress.IPv6Network:
+def ip_network(cidr: str) -> ipaddress.IPv4Network | ipaddress.IPv6Network:
     """Parse a validated CIDR string into an ``ipaddress`` network."""
     return ipaddress.ip_network(cidr, strict=True)
 
 
 def _cidr(value: str) -> str:
     try:
-        return str(network(value))
+        return str(ip_network(value))
     except ValueError as exc:
         raise ValueError(f"invalid CIDR {value!r}: {exc}") from exc
 
 
 def _ipv4_cidr(value: str) -> str:
-    if network(value).version != 4:  # noqa: PLR2004 - IP version number
+    if ip_network(value).version != 4:  # noqa: PLR2004 - IP version number
         raise ValueError(f"{value!r} is not an IPv4 CIDR")
     return value
 

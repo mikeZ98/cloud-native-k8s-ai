@@ -305,7 +305,8 @@ class RollingUpdate(K8sModel):
 
 class DeploymentStrategy(K8sModel):
     type: Literal["RollingUpdate", "Recreate"] = "RollingUpdate"
-    rolling_update: RollingUpdate | None = Field(default_factory=RollingUpdate)
+    rolling_update: RollingUpdate | None = None
+    """Unset means the API server defaults (25% / 25%); ``DeploymentSpec`` sets explicit ones."""
 
     @model_validator(mode="after")
     def _rolling_update_only_for_rolling(self) -> Self:
@@ -318,7 +319,9 @@ class DeploymentSpec(K8sModel):
     replicas: int = Field(default=2, ge=0, le=1000)
     revision_history_limit: int = Field(default=5, ge=0, le=100)
     selector: LabelSelector
-    strategy: DeploymentStrategy = Field(default_factory=DeploymentStrategy)
+    strategy: DeploymentStrategy = Field(
+        default_factory=lambda: DeploymentStrategy(rolling_update=RollingUpdate())
+    )
     template: PodTemplateSpec
 
     @model_validator(mode="after")

@@ -13,7 +13,13 @@ from typing import Annotated, Literal, Self
 
 from pydantic import AfterValidator, Field, StringConstraints, model_validator
 
-from cloud_native_k8s_ai.schemas._base import DNS1123Label, InfraModel, IPv4Cidr, LabelKey, network
+from cloud_native_k8s_ai.schemas._base import (
+    DNS1123Label,
+    InfraModel,
+    IPv4Cidr,
+    LabelKey,
+    ip_network,
+)
 
 CloudProvider = Literal["eks", "gke"]
 
@@ -96,20 +102,20 @@ class VpcConfig(InfraModel):
 
     @model_validator(mode="after")
     def _layout(self) -> Self:
-        vpc = network(self.cidr)
+        vpc = ip_network(self.cidr)
         low, high = VPC_PREFIX_RANGE
         if not low <= vpc.prefixlen <= high:
             raise ValueError(f"VPC CIDR {self.cidr} must be between /{low} and /{high}")
         subnets = (*self.private_subnets, *self.public_subnets)
         for subnet in subnets:
-            if not network(subnet).subnet_of(vpc):  # type: ignore[arg-type]
+            if not ip_network(subnet).subnet_of(vpc):  # type: ignore[arg-type]
                 raise ValueError(f"subnet {subnet} is outside VPC {self.cidr}")
         secondary = tuple(c for c in (self.pods_cidr, self.services_cidr) if c is not None)
         for cidr in secondary:
-            if network(cidr).overlaps(vpc):
+            if ip_network(cidr).overlaps(vpc):
                 raise ValueError(f"secondary range {cidr} overlaps VPC {self.cidr}")
         for a, b in combinations((*subnets, *secondary), 2):
-            if network(a).overlaps(network(b)):
+            if ip_network(a).overlaps(ip_network(b)):
                 raise ValueError(f"CIDRs {a} and {b} overlap")
         return self
 
@@ -152,7 +158,7 @@ class ClusterBootstrapVars(InfraModel):
         if self.endpoint_public_access:
             if not self.authorized_cidrs:
                 raise ValueError("a public API endpoint requires authorized_cidrs")
-            if any(network(c).prefixlen == 0 for c in self.authorized_cidrs):
+            if any(ip_network(c).prefixlen == 0 for c in self.authorized_cidrs):
                 raise ValueError("authorized_cidrs must not include 0.0.0.0/0")
         return self
 
