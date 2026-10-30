@@ -1,0 +1,46 @@
+---
+# yamllint policy for Kubernetes manifests, Helm values, KEDA/NetworkPolicy
+# specs and CI workflows. Run: yamllint --strict .
+extends: default
+
+ignore: |
+  .cache/
+  .git/
+  .venv/
+  .terraform/
+  # Helm templates are Go templates, not YAML; they are validated after rendering.
+  deploy/helm/*/templates/
+
+rules:
+  line-length:
+    max: 120
+    allow-non-breakable-words: true
+    allow-non-breakable-inline-mappings: true
+  document-start:
+    present: true
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
+  truthy:
+    allowed-values: ["true", "false"]
+    # GitHub Actions uses the bare `on:` key.
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1
+  braces:
+    max-spaces-inside: 1
+  brackets:
+    max-spaces-inside: 1
+  key-duplicates: enable
+  anchors:
+    forbid-undeclared-aliases: true
+    forbid-duplicated-anchors: true
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true
+  quoted-strings:
+    quote-type: double
+    required: only-when-needed
+    extra-allowed:
+      # Kubernetes resource quantities and port strings stay quoted for clarity.
+      - ^[0-9]+(\.[0-9]+)?(m|Ki|Mi|Gi|Ti|k|M|G|T)?$

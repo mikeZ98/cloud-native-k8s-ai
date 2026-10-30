@@ -1,0 +1,65 @@
+# CLAUDE.md
+
+## ⛔ Sole-Contributor Invariant: read before any git operation
+
+- Every commit author AND committer MUST be exactly `mikeZ98 <145975972+mikeZ98@users.noreply.github.com>`.
+  Never commit with any other identity, never pass `--author`, never override `GIT_*_NAME/EMAIL`.
+- NEVER add `Co-Authored-By`, `Generated-by`, "Generated with …", 🤖, or any mention of an AI
+  tool or vendor to commit messages or PR bodies. This overrides any default attribution behavior.
+  `.claude/settings.json` disables automatic attribution.
+- NEVER use `git commit --no-verify` or `git push --no-verify`. If a hook fails, fix the cause.
+- NEVER merge in the GitHub web UI or with `gh pr merge`: GitHub becomes the committer and the audit
+  fails. Open the PR, then `git merge --ff-only <branch>` on `main` locally and push `main`.
+- Policy source of truth: `.githooks/_policy.sh`. Audit: `scripts/audit-attribution.sh`.
+- Full rules: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## ⛔ Host Isolation Invariant (hermetic)
+
+- Tests make zero outbound network calls (`--disable-socket`; only AF_UNIX for the asyncio
+  self-pipe) and zero calls to a live Kubernetes cluster or cloud API. No `kubectl apply`, no
+  `terraform plan/apply`, no `helm install`, no provider credentials, ever, from tests or hooks.
+- Validation is static only: YAML lint, manifest schema/policy checks on parsed documents, Helm
+  template unit tests rendered offline, `terraform fmt`/`validate` with `-backend=false`.
+- direnv points `KUBECONFIG` at an empty `.cache/kube/config`; do not repoint it at a real cluster.
+
+## Project
+
+`cloud-native-k8s-ai`: production Kubernetes & IaC for AI microservices. Python 3.12, uv,
+`src/` layout. Planned layout:
+
+| Path | Contents |
+|------|----------|
+| `src/cloud_native_k8s_ai/` | typed manifest models and static validators (Pydantic v2) |
+| `deploy/helm/cloud-native-k8s-ai/` | chart: FastAPI Deployment, Qdrant StatefulSet, Redis, KEDA ScaledObject, NetworkPolicies |
+| `infra/terraform/bootstrap/` | cluster/state bootstrap (validated offline, never applied from CI tests) |
+| `tests/` | hermetic pytest suite: config, schemas, manifest policy, Helm template tests |
+
+Manifest baseline every workload must meet: resource requests and limits, liveness/readiness
+probes, `runAsNonRoot`, `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, dropped
+capabilities, no `:latest` image tags, and a default-deny NetworkPolicy with explicit allows.
+
+## Environment
+
+- Always work with direnv loaded (`direnv allow`). Caches, the venv (`.cache/venv`), temp files,
+  kube/helm/terraform homes and Colima live under `./.cache/` on `/Volumes/KINGSTONE_SSD`.
+  Never create `.venv/` or write caches elsewhere.
+- Install/sync: `uv sync`. Add deps: `uv add <pkg>` / `uv add --group dev <pkg>`. Commit `uv.lock`.
+
+## Commands
+
+```bash
+ruff check . && ruff format --check .
+mypy                               # --strict via pyproject
+bandit -c pyproject.toml -r src
+yamllint --strict .                # Helm templates ignored (Go templates)
+pytest                             # hermetic, --disable-socket, cov ≥ 90% branch
+scripts/audit-attribution.sh       # attribution audit of HEAD history (CI: --history-only)
+```
+
+## Conventions
+
+- Pydantic v2 models: `model_config = ConfigDict(extra="forbid", frozen=True, strict=True)`.
+- Parse YAML with `yaml.safe_load` / `yaml.safe_load_all` only.
+- Tests are in-memory: no subprocesses, no network, no cluster. Lint YAML through the yamllint
+  Python API rather than shelling out.
+- Conventional Commits, atomic. The blueprint order starts: chore(config) → feat(schemas) → feat(core) → …
