@@ -14,10 +14,10 @@ from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from typing import Any, Final, Literal
+from typing import Any, Final
 
+from cloud_native_k8s_ai.guardrails.catalog import AUTOSCALING, violation
 from cloud_native_k8s_ai.guardrails.models import (
-    GuardrailDecision,
     JsonPatchOp,
     ObjectRef,
     PolicyViolation,
@@ -34,7 +34,7 @@ from cloud_native_k8s_ai.guardrails.objects import (
 )
 from cloud_native_k8s_ai.schemas import cpu_millicores, memory_bytes
 
-POLICY: Final = "autoscaling"
+POLICY: Final = AUTOSCALING
 KEDA_DEFAULTS: Final = {
     "pollingInterval": 30,
     "cooldownPeriod": 300,
@@ -104,17 +104,9 @@ class KedaCritic:
         path: str,
         message: str,
         advice: RemediationAdvice,
-        *,
-        decision: Literal[GuardrailDecision.WARN, GuardrailDecision.DENY] = GuardrailDecision.DENY,
     ) -> PolicyViolation:
-        return PolicyViolation(
-            code=code,
-            policy=self.name,
-            decision=decision,
-            target=target,
-            path=path,
-            message=message,
-            remediation=advice,
+        return violation(
+            code, policy=self.name, target=target, path=path, message=message, remediation=advice
         )
 
     @staticmethod
@@ -167,7 +159,6 @@ class KedaCritic:
                     "/spec/pollingInterval",
                     f"pollingInterval {polling}s is below {self.min_polling_interval}s",
                     self._manual(f"poll every {self.min_polling_interval}s or slower"),
-                    decision=GuardrailDecision.WARN,
                 )
             )
         if low > high:
@@ -188,7 +179,6 @@ class KedaCritic:
                     "/spec/maxReplicaCount",
                     f"minReplicaCount == maxReplicaCount == {low}: the scaler can never act",
                     self._manual("widen the replica range or remove the ScaledObject"),
-                    decision=GuardrailDecision.WARN,
                 )
             )
         idle = spec.get("idleReplicaCount")
@@ -258,7 +248,6 @@ class KedaCritic:
                 "/spec/scaleTargetRef",
                 f"scale target {kind} {namespace}/{name} is not part of this manifest set",
                 self._manual("deploy the target together with its ScaledObject"),
-                decision=GuardrailDecision.WARN,
             )
         ]
 

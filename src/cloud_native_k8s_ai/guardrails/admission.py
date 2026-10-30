@@ -14,8 +14,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final
 
+from cloud_native_k8s_ai.guardrails.catalog import WORKLOAD, violation
 from cloud_native_k8s_ai.guardrails.models import (
-    GuardrailDecision,
     JsonPatchOp,
     PolicyViolation,
     RemediationAdvice,
@@ -30,7 +30,7 @@ from cloud_native_k8s_ai.guardrails.objects import (
 )
 from cloud_native_k8s_ai.schemas import cpu_millicores, memory_bytes
 
-POLICY: Final = "workload-security"
+POLICY: Final = WORKLOAD
 PLATFORM_UID: Final = 10001
 """UID substituted for an explicit root user (the images' unprivileged user)."""
 HOST_NAMESPACES: Final = ("hostNetwork", "hostPID", "hostIPC")
@@ -78,10 +78,9 @@ class WorkloadGuardrail:
     def _violation(
         self, workload: Workload, code: str, path: str, message: str, advice: RemediationAdvice
     ) -> PolicyViolation:
-        return PolicyViolation(
-            code=code,
+        return violation(
+            code,
             policy=self.name,
-            decision=GuardrailDecision.DENY,
             target=workload.ref,
             path=path,
             message=message,

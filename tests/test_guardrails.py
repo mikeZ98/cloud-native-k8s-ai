@@ -1086,3 +1086,47 @@ def test_shared_policies_never_receive_the_qdrant_rule(docs: Docs) -> None:
         find(list(result.documents), "NetworkPolicy", "default-deny-all")["spec"]["ingress"] == []
     )
     assert zero_trust_ok(list(result.documents))
+
+
+def test_catalog_has_no_dead_codes() -> None:
+    """Every catalogued code is emitted by some guardrail (literal or f-string family).
+
+    The reverse holds by construction: decisions are looked up in the catalog, so an
+    unregistered code raises KeyError on a line the 100% branch coverage executes.
+    """
+    import ast  # noqa: PLC0415
+    import re  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    from cloud_native_k8s_ai.guardrails import CATALOG  # noqa: PLC0415
+
+    sources = Path(__file__).resolve().parent.parent / "src/cloud_native_k8s_ai/guardrails"
+    literals: set[str] = set()
+    families: list[re.Pattern[str]] = []
+    for name in ("admission.py", "network_critic.py", "keda_critic.py"):
+        for node in ast.walk(ast.parse((sources / name).read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                literals.add(node.value)
+            elif isinstance(node, ast.JoinedStr):
+                parts = [
+                    re.escape(str(v.value)) if isinstance(v, ast.Constant) else "[a-z]+"
+                    for v in node.values
+                ]
+                families.append(re.compile("".join(parts)))
+    dead = {c for c in CATALOG if c not in literals and not any(f.fullmatch(c) for f in families)}
+    assert dead == set()
+    assert len(CATALOG) == 44
+
+
+def test_catalog_refuses_inconsistent_violations() -> None:
+    from cloud_native_k8s_ai.guardrails.catalog import violation  # noqa: PLC0415
+
+    target = ObjectRef(kind="Pod", namespace="n", name="p")
+    manual = RemediationAdvice(summary="s", action="manual")
+    fields: dict[str, Any] = {"policy": "p", "target": target, "path": "", "message": "m"}
+    built = violation("image-latest-tag", remediation=manual, **fields)
+    assert built.decision is GuardrailDecision.DENY
+    with pytest.raises(GuardrailError, match="contradicts the catalog's 'patch'"):
+        violation("run-as-root", remediation=manual, **fields)
+    with pytest.raises(KeyError):
+        violation("made-up-code", remediation=manual, **fields)

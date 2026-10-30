@@ -23,10 +23,10 @@ from __future__ import annotations
 import ipaddress
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Final, Literal
+from typing import Any, Final
 
+from cloud_native_k8s_ai.guardrails.catalog import NETWORK, violation
 from cloud_native_k8s_ai.guardrails.models import (
-    GuardrailDecision,
     JsonPatchOp,
     ObjectRef,
     PolicyViolation,
@@ -47,7 +47,7 @@ from cloud_native_k8s_ai.guardrails.objects import (
 from cloud_native_k8s_ai.guardrails.remediation import DEFAULT_MAX_ROUNDS, critic_loop
 from cloud_native_k8s_ai.schemas import DNS_PORT, default_deny_policy, dns_egress_policy
 
-POLICY: Final = "network-zero-trust"
+POLICY: Final = NETWORK
 NAMESPACE_NAME_LABEL: Final = "kubernetes.io/metadata.name"
 KUBE_SYSTEM: Final = "kube-system"
 _DIRECTIONS: Final = (("Ingress", "ingress", "from"), ("Egress", "egress", "to"))
@@ -114,17 +114,9 @@ class NetworkCritic:
         path: str,
         message: str,
         advice: RemediationAdvice,
-        *,
-        decision: Literal[GuardrailDecision.WARN, GuardrailDecision.DENY] = GuardrailDecision.DENY,
     ) -> PolicyViolation:
-        return PolicyViolation(
-            code=code,
-            policy=self.name,
-            decision=decision,
-            target=target,
-            path=path,
-            message=message,
-            remediation=advice,
+        return violation(
+            code, policy=self.name, target=target, path=path, message=message, remediation=advice
         )
 
     # -- generic permissiveness --------------------------------------------------
@@ -270,7 +262,6 @@ class NetworkCritic:
                     action="create",
                     document=dns_egress_policy(namespace).to_k8s(),
                 ),
-                decision=GuardrailDecision.WARN,
             )
         ]
 
@@ -354,14 +345,13 @@ class NetworkCritic:
             if selecting and (admitted or flagged or not apis):
                 continue
             create = self._isolation_policy(store, canonical, documents)
-            decision: Literal[GuardrailDecision.WARN, GuardrailDecision.DENY]
             if not selecting:
-                code, decision = "qdrant-not-isolated", GuardrailDecision.DENY
+                code = "qdrant-not-isolated"
                 text = f"no ingress policy selects {store.ref.name}: every pod can reach it"
             else:
-                code, decision = "qdrant-unreachable-from-api", GuardrailDecision.WARN
+                code = "qdrant-unreachable-from-api"
                 text = f"no policy admits the API pods into {store.ref.name}"
-            violations.append(self._violation(code, store.ref, "", text, create, decision=decision))
+            violations.append(self._violation(code, store.ref, "", text, create))
         return violations
 
     def _exclusive(

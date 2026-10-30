@@ -2,6 +2,7 @@
 and the auto-remediation critic loop, all pure and in-memory."""
 
 from cloud_native_k8s_ai.guardrails.admission import WorkloadGuardrail, image_problem
+from cloud_native_k8s_ai.guardrails.catalog import CATALOG, CodeSpec
 from cloud_native_k8s_ai.guardrails.engine import (
     DEFAULT_GUARDRAILS,
     AdmissionEngine,
@@ -32,10 +33,12 @@ from cloud_native_k8s_ai.guardrails.remediation import (
 )
 
 __all__ = [
+    "CATALOG",
     "DEFAULT_GUARDRAILS",
     "AdmissionDeniedError",
     "AdmissionEngine",
     "AdmissionReport",
+    "CodeSpec",
     "Guardrail",
     "GuardrailDecision",
     "GuardrailError",
