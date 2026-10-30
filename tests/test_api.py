@@ -1011,3 +1011,9 @@ def test_guardrail_errors_map_to_400() -> None:
     response = _handle_core(request, GuardrailError("cannot evaluate"))
     assert response.status_code == 400
     assert json.loads(bytes(response.body))["type"].endswith(":guardrail-error")
+
+
+def test_openapi_lists_only_reachable_responses() -> None:
+    paths = create_app().openapi()["paths"]
+    assert set(paths[STREAM]["get"]["responses"]) == {"200", "422", "503"}
+    assert set(paths[STREAM]["post"]["responses"]) == {"200", "400", "413", "422", "503"}

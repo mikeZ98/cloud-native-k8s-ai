@@ -144,12 +144,16 @@ _STREAM_RESPONSES: Final[dict[int | str, dict[str, Any]]] = {
     },
     **_PROBLEMS,
 }
+# Without a body, the GET stream can only fail on its query overrides or a missing chart.
+_REFERENCE_STREAM_RESPONSES: Final[dict[int | str, dict[str, Any]]] = {
+    status: spec for status, spec in _STREAM_RESPONSES.items() if status in {200, 422, 503}
+}
 
 
 @router.get(
     "/stream/compile",
     summary="Stream the reference stack (chart defaults) document by document",
-    responses=_STREAM_RESPONSES,
+    responses=_REFERENCE_STREAM_RESPONSES,
 )
 async def stream_reference(
     plane: Plane,
