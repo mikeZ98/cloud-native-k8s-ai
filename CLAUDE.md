@@ -66,6 +66,12 @@ scripts/audit-attribution.sh       # attribution audit of HEAD history (CI: --hi
 - Quantities, names and CIDRs stay as validated `str` in the exact Kubernetes spelling; compare
   them via `cpu_millicores` / `memory_bytes` / `network`, never as strings.
 - Regex constraints run on pydantic-core's Rust engine: no look-around; use `AfterValidator`.
+- Manifests come from `core.compile_ai_stack` (build + KEDA binding + zero-trust check), serialized
+  with `ManifestBundle.to_yaml()`. Never hand-write or `yaml.dump` manifests.
+- Changing a NetworkPolicy means changing `AIStackGenerator.intent()` in the same commit; the
+  topology solver rejects any reachable flow the intent does not declare.
+- Core failures raise `core.errors` types (`ManifestRenderError`, `ResourceConstraintError`,
+  `TopologyConflictError`), never a bare pydantic `ValidationError`.
 - Parse YAML with `yaml.safe_load` / `yaml.safe_load_all` only.
 - Tests are in-memory: no subprocesses, no network, no cluster. Lint YAML through the yamllint
   Python API rather than shelling out.

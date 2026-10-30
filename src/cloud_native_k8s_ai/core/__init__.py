@@ -1,0 +1,78 @@
+"""Infrastructure compilation engine: manifest generation, zero-trust topology solving and
+autoscaling resolution, all pure and in-memory."""
+
+from cloud_native_k8s_ai.core.autoscaler import (
+    CLUSTER_DOMAIN,
+    AutoscalingPolicy,
+    AutoscalingResolver,
+    ResourceBudget,
+    check_policy,
+    desired_replicas,
+    service_host,
+)
+from cloud_native_k8s_ai.core.errors import (
+    K8sAiCoreError,
+    ManifestRenderError,
+    ResourceConstraintError,
+    TopologyConflictError,
+    Violation,
+)
+from cloud_native_k8s_ai.core.generator import (
+    MANIFEST_TYPES,
+    SCRATCH_PATH,
+    TOP_LEVEL_ORDER,
+    AIStackGenerator,
+    AIStackSpec,
+    Manifest,
+    ManifestBundle,
+    build_ai_stack,
+    canonical,
+    compile_ai_stack,
+    parse_yaml,
+    render_yaml,
+)
+from cloud_native_k8s_ai.core.topology import (
+    SENTINEL_PORTS,
+    Endpoint,
+    ExclusiveIngress,
+    Flow,
+    NetworkTopology,
+    TopologyReport,
+    TopologySolver,
+    ZeroTrustIntent,
+)
+
+__all__ = [
+    "CLUSTER_DOMAIN",
+    "MANIFEST_TYPES",
+    "SCRATCH_PATH",
+    "SENTINEL_PORTS",
+    "TOP_LEVEL_ORDER",
+    "AIStackGenerator",
+    "AIStackSpec",
+    "AutoscalingPolicy",
+    "AutoscalingResolver",
+    "Endpoint",
+    "ExclusiveIngress",
+    "Flow",
+    "K8sAiCoreError",
+    "Manifest",
+    "ManifestBundle",
+    "ManifestRenderError",
+    "NetworkTopology",
+    "ResourceBudget",
+    "ResourceConstraintError",
+    "TopologyConflictError",
+    "TopologyReport",
+    "TopologySolver",
+    "Violation",
+    "ZeroTrustIntent",
+    "build_ai_stack",
+    "canonical",
+    "check_policy",
+    "compile_ai_stack",
+    "desired_replicas",
+    "parse_yaml",
+    "render_yaml",
+    "service_host",
+]
