@@ -25,6 +25,9 @@ dependencies = [
   "jsonschema>=4.23",
 ]
 
+[project.scripts]
+k8s-ai = "cloud_native_k8s_ai.cli:main"
+
 [dependency-groups]
 dev = [
   "pytest>=8.3",
