@@ -58,7 +58,14 @@ scripts/audit-attribution.sh       # attribution audit of HEAD history (CI: --hi
 
 ## Conventions
 
-- Pydantic v2 models: `model_config = ConfigDict(extra="forbid", frozen=True, strict=True)`.
+- Pydantic v2 models: `model_config = ConfigDict(extra="forbid", frozen=True, strict=True)`
+  (inherit `schemas._base.InfraModel`; Kubernetes-shaped objects inherit `K8sModel`, which is
+  snake_case in Python and camelCase on the wire). Sequences are tuples.
+- Parse external dicts with `Model.from_wire(data)` (JSON-mode strictness) and emit manifests with
+  `to_k8s()` / tfvars with `to_tfvars()`; never `model_dump()` by hand.
+- Quantities, names and CIDRs stay as validated `str` in the exact Kubernetes spelling; compare
+  them via `cpu_millicores` / `memory_bytes` / `network`, never as strings.
+- Regex constraints run on pydantic-core's Rust engine: no look-around; use `AfterValidator`.
 - Parse YAML with `yaml.safe_load` / `yaml.safe_load_all` only.
 - Tests are in-memory: no subprocesses, no network, no cluster. Lint YAML through the yamllint
   Python API rather than shelling out.
