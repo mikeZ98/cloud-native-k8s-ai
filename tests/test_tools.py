@@ -42,6 +42,7 @@ from cloud_native_k8s_ai.tools.helm import (
     HELM_RELEASE_LABELS,
     Chart,
     ChartError,
+    ChartLintError,
     ChartValuesError,
     LintReport,
     Release,
@@ -999,8 +1000,12 @@ def test_lint_flags_invalid_overlays_and_open_schemas(
     report = lint_chart(chart, {"bad": {"redis": {"maxmemory": "4Gi"}}})
     assert not report.ok
     assert report.findings[0].startswith("[bad] values do not satisfy the chart contract")
-    with pytest.raises(ChartError, match="chart lint failed"):
+    with pytest.raises(ChartLintError, match="chart lint failed") as info:
         report.raise_for_findings()
+    assert info.value.findings == report.findings
+    only = lint_chart(chart, {"bad": {"redis": {"maxmemory": "4Gi"}}}, include_defaults=False)
+    assert only.findings == report.findings
+    assert lint_chart(chart, include_defaults=False).ok
     schema = json.loads(chart_files["values.schema.json"])
     del schema["properties"]["api"]["additionalProperties"]
     opened = Chart.from_files({**chart_files, "values.schema.json": json.dumps(schema)})

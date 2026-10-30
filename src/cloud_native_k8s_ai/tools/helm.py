@@ -61,6 +61,15 @@ class ChartValuesError(ChartError):
         super().__init__(f"values do not satisfy the chart contract:{detail}")
 
 
+class ChartLintError(ChartError):
+    """``lint_chart`` found problems; ``findings`` lists each one."""
+
+    def __init__(self, findings: Sequence[str]) -> None:
+        self.findings: tuple[str, ...] = tuple(findings)
+        detail = "".join(f"\n  - {f}" for f in self.findings)
+        super().__init__(f"chart lint failed:{detail}")
+
+
 # ---------------------------------------------------------------------------
 # Chart model
 # ---------------------------------------------------------------------------
@@ -556,16 +565,18 @@ class LintReport:
 
     def raise_for_findings(self) -> None:
         if self.findings:
-            detail = "".join(f"\n  - {f}" for f in self.findings)
-            raise ChartError(f"chart lint failed:{detail}")
+            raise ChartLintError(self.findings)
 
 
 def lint_chart(
     chart: Chart,
     overlays: Mapping[str, Mapping[str, Any]] | None = None,
     release: Release | None = None,
+    *,
+    include_defaults: bool = True,
 ) -> LintReport:
-    """Lint the chart for its default values and every named overlay.
+    """Lint the chart for its default values (unless ``include_defaults`` is false) and
+    every named overlay.
 
     Per values set: schema and typed-contract validation, a strict render, typed parsing
     of every document, Helm release labels, object-for-object equality with the core
@@ -574,7 +585,8 @@ def lint_chart(
     if chart.schema is None:
         return LintReport(("values.schema.json: missing",))
     findings = [f"values.schema.json: {p}" for p in open_schema_objects(chart.schema)]
-    for label, overlay in {"defaults": {}, **(overlays or {})}.items():
+    named: dict[str, Mapping[str, Any]] = {"defaults": {}} if include_defaults else {}
+    for label, overlay in {**named, **(overlays or {})}.items():
         findings += [f"[{label}] {p}" for p in _lint_values(chart, overlay, release)]
     return LintReport(tuple(findings))
 

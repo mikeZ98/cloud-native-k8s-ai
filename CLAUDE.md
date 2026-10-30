@@ -54,6 +54,7 @@ bandit -c pyproject.toml -r src
 yamllint --strict .                # Helm templates ignored (Go templates)
 pytest                             # hermetic, --disable-socket, cov ≥ 90% branch
 scripts/audit-attribution.sh       # attribution audit of HEAD history (CI: --history-only)
+uvicorn --factory cloud_native_k8s_ai.api:create_app --port 8000   # control plane (dev)
 ```
 
 ## Conventions
@@ -78,6 +79,11 @@ scripts/audit-attribution.sh       # attribution audit of HEAD history (CI: --hi
 - Chart values are float64 in templates (as in Helm): wrap numbers with `int` before `printf
   "%d"`, comparisons or arithmetic, and `quote` string args/env values. Every schema object
   with `properties` sets `additionalProperties: false`; optional keys are read via `hasKey`.
+- API request bodies go through `api.deps.parse_model` (`model_validate_json`), never FastAPI
+  body parameters: Python-mode validation rejects JSON arrays for the strict tuple fields.
+  Document them with `json_body` / `component`. Every error leaves the API as an RFC 7807
+  `application/problem+json` response mapped in `api.problems`; add new core errors there.
+- Client-supplied YAML passes `api.service.reject_yaml_aliases` before parsing (no anchors).
 - Parse YAML with `yaml.safe_load` / `yaml.safe_load_all` only.
 - Tests are in-memory: no subprocesses, no network, no cluster. Lint YAML through the yamllint
   Python API rather than shelling out.
