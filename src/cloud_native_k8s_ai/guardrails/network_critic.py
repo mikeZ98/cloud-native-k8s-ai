@@ -323,7 +323,20 @@ class NetworkCritic:
                 admitted = admitted or any(verdicts)
                 if all(verdicts):
                     continue
-                flagged = True  # its remediation installs the API-only rule
+                # A policy that also governs other pods must never receive Qdrant's rule:
+                # it would open those pods to the API too. Drop the offending rules there
+                # (a dedicated Qdrant policy follows if needed); rewrite dedicated ones.
+                shared = any(
+                    _selects(policy, w)
+                    for w in local
+                    if not _matches(self.vector_store_labels, w.pod_labels)
+                )
+                if shared:
+                    kept: list[Any] = [r for r, ok in zip(rules, verdicts, strict=True) if ok]
+                    summary = "remove the rules that open Qdrant (the policy governs other pods)"
+                else:
+                    kept, flagged = canonical, True  # installs the API-only rule
+                    summary = "replace the ingress rules with the API-only Qdrant rule"
                 violations.append(
                     self._violation(
                         "qdrant-ingress-not-exclusive",
@@ -332,11 +345,9 @@ class NetworkCritic:
                         f"{store.ref.name} admits peers other than the API pods "
                         f"{[a.ref.name for a in apis]} on its own ports",
                         RemediationAdvice(
-                            summary="replace the ingress rules with the API-only Qdrant rule",
+                            summary=summary,
                             action="patch",
-                            patch=(
-                                JsonPatchOp(op="replace", path="/spec/ingress", value=canonical),
-                            ),
+                            patch=(JsonPatchOp(op="replace", path="/spec/ingress", value=kept),),
                         ),
                     )
                 )

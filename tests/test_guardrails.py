@@ -1070,3 +1070,19 @@ def test_engine_for_stack_trusts_the_stack_not_generic_defaults() -> None:
     assert generic_identity.evaluate([*docs, lookalike]).allowed  # any "component: api" pod
     report = scoped.evaluate([*docs, lookalike])
     assert report.codes() == {"qdrant-ingress-not-exclusive"}
+
+
+def test_shared_policies_never_receive_the_qdrant_rule(docs: Docs) -> None:
+    # A default-deny that "allows all" selects every pod, Qdrant included.
+    find(docs, "NetworkPolicy", "default-deny-all")["spec"]["ingress"] = [{}]
+    flagged = next(v for v in network(docs) if v.code == "qdrant-ingress-not-exclusive")
+    assert flagged.target.name == "default-deny-all"
+    # Installing Qdrant's API-only rule here would open every pod to the API: only drop.
+    assert flagged.remediation.patch[0].value == []
+    assert flagged.remediation.summary.startswith("remove the rules")
+    result = NetworkCritic().loop(docs)
+    assert result.final.violations == ()
+    assert (
+        find(list(result.documents), "NetworkPolicy", "default-deny-all")["spec"]["ingress"] == []
+    )
+    assert zero_trust_ok(list(result.documents))
