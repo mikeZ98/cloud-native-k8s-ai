@@ -110,6 +110,8 @@ def test_workflow_runs_every_quality_gate(workflow: dict[str, Any]) -> None:
     assert run_lines(workflow, "attribution") == ["scripts/audit-attribution.sh --history-only"]
     checkout = jobs["attribution"]["steps"][0]
     assert checkout["with"]["fetch-depth"] == 0  # the audit needs the whole history
+    # ... and the PR head, never GitHub's synthetic merge commit (committer "GitHub")
+    assert checkout["with"]["ref"] == "${{ github.event.pull_request.head.sha || github.sha }}"
 
 
 def test_coverage_gate_is_100_percent_branch() -> None:
