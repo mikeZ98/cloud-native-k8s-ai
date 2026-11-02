@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# commit-msg: reject AI attribution / co-author trailers, enforce Conventional
-# Commits and re-validate author + committer identity (covers --author, --amend).
+# commit-msg: enforce Conventional Commits and re-validate author + committer
+# identity (covers --author, --amend).
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
@@ -13,7 +13,6 @@ subject="$(sed -n '/[^[:space:]]/{p;q;}' <<<"$msg")"
 fail=0
 [[ -n "$subject" ]] || { policy_err "Empty commit message."; exit 1; }
 policy_check_subject "$subject" || fail=1
-policy_check_message "$msg" || fail=1
 
 IFS=$'\t' read -r a_name a_email <<<"$(policy_parse_ident "$(git var GIT_AUTHOR_IDENT)")"
 IFS=$'\t' read -r c_name c_email <<<"$(policy_parse_ident "$(git var GIT_COMMITTER_IDENT)")"

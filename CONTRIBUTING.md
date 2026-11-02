@@ -10,10 +10,9 @@ Every commit in this repository, on every branch, MUST have **author and committ
 | Email | `145975972+mikeZ98@users.noreply.github.com` |
 
 - No other name, no machine username, no personal or local email: zero tolerance.
-- Commit messages MUST NOT contain AI attribution or co-author metadata. Banned: `Co-Authored-By`,
-  `Generated-by`, `Generated with`, `Assisted-by`, `AI-generated`, the 🤖 emoji, and any mention of
-  Claude, Anthropic, ChatGPT, OpenAI, GPT-n, Copilot, Gemini or Cursor. The literal file name
-  `CLAUDE.md` is the only exception.
+- Commit messages follow Conventional Commits. AI-native development is welcome and disclosed:
+  tool-assistance trailers such as `Co-Authored-By:` may stay in the message, and every change
+  passes the same automated gates.
 - Every GitHub web-UI merge method (merge, squash and rebase) and `gh pr merge` record
   `GitHub <noreply@github.com>` as committer and **will fail** the audit. Fast-forward `main`
   locally instead (see below).
@@ -23,11 +22,11 @@ Every commit in this repository, on every branch, MUST have **author and committ
 | Layer | Where | Checks |
 |-------|-------|--------|
 | `pre-commit` | `.githooks/pre-commit` | author/committer identity; blocks `.cache/`, venvs, `.env*`, keys, Terraform state/vars, kubeconfigs; ruff on staged Python; yamllint on staged YAML |
-| `commit-msg` | `.githooks/commit-msg` | forbidden trailers/terms; Conventional Commit subject; identity re-check (covers `--author` and `--amend`) |
+| `commit-msg` | `.githooks/commit-msg` | Conventional Commit subject; identity re-check (covers `--author` and `--amend`) |
 | `pre-push` | `.githooks/pre-push` | full audit of every commit being pushed |
 | Manual / CI | `scripts/audit-attribution.sh` | configured identity plus a full audit of the branch history (`--history-only` in CI) |
 
-The policy (allowed identity, banned message patterns and forbidden paths) lives in one place:
+The policy (allowed identity, Conventional Commit format and forbidden paths) lives in one place:
 `.githooks/_policy.sh`. Audit any range by hand with `scripts/audit-attribution.sh [<rev-list args>]`
 (default: `HEAD`). Never bypass hooks with `--no-verify`.
 
@@ -38,10 +37,10 @@ with `--disable-socket` (only AF_UNIX is allowed, for the asyncio self-pipe). Ma
 templates and Terraform are validated statically and offline. `.envrc` points `KUBECONFIG` at an
 empty project-local file so `kubectl`/`helm` run from this repo cannot reach a real cluster.
 
-## Environment setup (macOS, external SSD)
+## Environment setup (macOS)
 
 All caches, the virtualenv, temp files, kube/helm/terraform homes and the Colima VM live under
-`./.cache/` on `/Volumes/KINGSTONE_SSD`. Nothing is written to the internal disk.
+`./.cache/`, so nothing is written outside the project.
 
 ```bash
 brew install uv direnv

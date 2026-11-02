@@ -8,7 +8,6 @@ no Kubernetes cluster or cloud API.
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import re
 import socket
@@ -116,7 +115,6 @@ def yamllint_config() -> YamlLintConfig:
         ".editorconfig",
         ".envrc",
         ".yamllint.yaml",
-        ".claude/settings.json",
         ".githooks/_policy.sh",
         "CLAUDE.md",
         "CONTRIBUTING.md",
@@ -304,18 +302,11 @@ def test_envrc_isolates_cluster_and_iac_homes() -> None:
     assert 'export CHECKPOINT_DISABLE="1"' in envrc
 
 
-def test_claude_settings_disable_attribution() -> None:
-    settings = json.loads((ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
-    assert settings["includeCoAuthoredBy"] is False
-    assert settings["attribution"] == {"commit": "", "pr": ""}
-
-
 def test_audit_script_uses_shared_policy() -> None:
     text = (ROOT / "scripts" / "audit-attribution.sh").read_text(encoding="utf-8")
     assert 'source "$ROOT/.githooks/_policy.sh"' in text
     assert '"${1:-}" == "--history-only"' in text
-    for check in ("policy_check_identity", "policy_check_message"):
-        assert check in text
+    assert "policy_check_identity" in text
 
 
 def test_pre_commit_guards() -> None:
@@ -329,38 +320,6 @@ def test_pre_commit_guards() -> None:
 def test_pre_push_audits_outgoing_commits() -> None:
     text = (ROOT / ".githooks" / "pre-push").read_text(encoding="utf-8")
     assert '"$ROOT/scripts/audit-attribution.sh"' in text
-
-
-@pytest.mark.parametrize(
-    "message",
-    [
-        "chore: x\n\nCo-authored-by: Someone <a@b.c>",
-        "chore: x\n\nGenerated-by: tool",
-        "feat: x\n\nGenerated with some assistant",
-        "fix: x\n\nAssisted-by: bot",
-        "fix: written by Claude",
-        "docs: courtesy of ChatGPT",
-        "docs: via GitHub Copilot",
-        "chore: 🤖 automated",
-    ],
-)
-def test_forbidden_message_rejected(policy: str, message: str) -> None:
-    pattern = re.compile(_shell_constant(policy, "POLICY_FORBIDDEN_MSG_RE"), re.IGNORECASE)
-    assert pattern.search(message) is not None
-
-
-@pytest.mark.parametrize(
-    "message",
-    [
-        "chore(config): initialize cloud-native-k8s-ai repository with uv, linters, and "
-        "attribution gates",
-        "docs: document rules in CLAUDE.md",
-        "feat(helm): add qdrant statefulset and keda scaledobject",
-    ],
-)
-def test_clean_message_accepted(policy: str, message: str) -> None:
-    pattern = re.compile(_shell_constant(policy, "POLICY_FORBIDDEN_MSG_RE"), re.IGNORECASE)
-    assert pattern.search(message.replace("CLAUDE.md", "")) is None
 
 
 @pytest.mark.parametrize(

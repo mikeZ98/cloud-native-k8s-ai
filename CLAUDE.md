@@ -1,12 +1,15 @@
 # CLAUDE.md
 
-## ⛔ Sole-Contributor Invariant: read before any git operation
+## Git commit policy
+
+Maintain clean, conventional git commit messages adhering to repository guidelines with unified
+author metadata. Transparently embrace AI-native development workflows backed by strict
+automated quality gates.
 
 - Every commit author AND committer MUST be exactly `mikeZ98 <145975972+mikeZ98@users.noreply.github.com>`.
   Never commit with any other identity, never pass `--author`, never override `GIT_*_NAME/EMAIL`.
-- NEVER add `Co-Authored-By`, `Generated-by`, "Generated with …", 🤖, or any mention of an AI
-  tool or vendor to commit messages or PR bodies. This overrides any default attribution behavior.
-  `.claude/settings.json` disables automatic attribution.
+- Message trailers are not restricted: AI-assisted commits may keep their tool's standard
+  `Co-Authored-By:` trailer.
 - NEVER use `git commit --no-verify` or `git push --no-verify`. If a hook fails, fix the cause.
 - NEVER merge in the GitHub web UI or with `gh pr merge`: GitHub becomes the committer and the audit
   fails. Open the PR, then `git merge --ff-only <branch>` on `main` locally and push `main`.
@@ -41,7 +44,7 @@ capabilities, no `:latest` image tags, and a default-deny NetworkPolicy with exp
 ## Environment
 
 - Always work with direnv loaded (`direnv allow`). Caches, the venv (`.cache/venv`), temp files,
-  kube/helm/terraform homes and Colima live under `./.cache/` on `/Volumes/KINGSTONE_SSD`.
+  kube/helm/terraform homes and Colima live under `./.cache/`.
   Never create `.venv/` or write caches elsewhere.
 - Install/sync: `uv sync`. Add deps: `uv add <pkg>` / `uv add --group dev <pkg>`. Commit `uv.lock`.
 
@@ -54,7 +57,7 @@ bandit -c pyproject.toml -r src
 yamllint --strict .                # Helm templates ignored (Go templates)
 pytest                             # hermetic, --disable-socket, cov ≥ 90% branch
 HYPOTHESIS_PROFILE=deep pytest tests/test_deep_eval.py   # long fuzzing run (default: derandomized)
-scripts/audit-attribution.sh       # attribution audit of HEAD history (CI: --history-only)
+scripts/audit-attribution.sh       # identity audit of HEAD history (CI: --history-only)
 uvicorn --factory cloud_native_k8s_ai.api:create_app --port 8000   # control plane (dev)
 k8s-ai --help                      # CLI: spec, compile, admit, chart lint|render, eval, serve
 k8s-ai eval --min codes.f1=1 --min robustness=1   # perturbation benchmark (deterministic)
