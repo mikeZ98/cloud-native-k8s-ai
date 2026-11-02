@@ -40,9 +40,19 @@ flowchart LR
     CORE & HELM & ADM --> API["FastAPI control plane"]
 ```
 
-Deep dives: [architecture](docs/architecture.md) (topology matrix, formal invariant,
-critic loop, KEDA loop) · [security model](docs/security_model.md) (threat matrix, code
-catalog, Kyverno/OPA parity, benchmarks).
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [Architecture](docs/architecture.md) | components, topology matrix, formal zero-trust invariant, critic loop, KEDA loop |
+| [Security model](docs/security_model.md) | threat matrix (41 vectors), YAML bombs, violation-code catalog, Kyverno/OPA parity, benchmarks |
+| [Operational runbook](docs/runbook.md) | alert thresholds, incident playbooks, break-glass and overrides, offline drift analysis |
+| [API and CLI reference](docs/api_reference.md) | every endpoint, schema, problem type, the SSE protocol and every CLI flag |
+| [OpenAPI document](docs/openapi.json) | the control plane's OpenAPI 3.1 specification |
+| [Alerting rules](deploy/monitoring/alerts.yaml) | Prometheus rules for the control plane and the scaling path |
+
+The API reference and `openapi.json` are generated from the code
+(`python -m cloud_native_k8s_ai.tools.reference`); tests fail if any document drifts.
 
 ## Quickstart
 
@@ -199,9 +209,9 @@ fails compilation.
 
 **Operate the control plane.** `/readyz` returns 503 with the failed check named
 (`chart`, `schemas`, `generator`, `guardrails`, `chartLint`) or `draining` during
-shutdown. Alert on `validations_total{outcome="deny"}` spikes (someone is pushing
-non-compliant manifests), `manifest_compilations_total{outcome="failure"}`, HTTP 5xx in
-`http_requests_total` and `manifest_streams_total{outcome="aborted"}`.
+shutdown. Load [`deploy/monitoring/alerts.yaml`](deploy/monitoring/alerts.yaml); each
+alert (denial storms, 5xx, saturation, stream aborts, stalled or saturated scaling)
+links to its playbook in the [runbook](docs/runbook.md).
 
 ## Quality gates
 
@@ -215,7 +225,7 @@ uv run ruff check . && uv run ruff format --check .
 uv run mypy                          # --strict
 uv run bandit -c pyproject.toml -r src
 uv run yamllint --strict .
-uv run pytest                        # ~1.1k tests, 100% branch coverage enforced
+uv run pytest                        # 1,304 tests, 100% branch coverage enforced
 scripts/audit-attribution.sh --history-only
 HYPOTHESIS_PROFILE=deep uv run pytest tests/test_deep_eval.py   # long fuzzing run
 ```
@@ -233,7 +243,8 @@ HYPOTHESIS_PROFILE=deep uv run pytest tests/test_deep_eval.py   # long fuzzing r
 | [`src/cloud_native_k8s_ai/cli.py`](src/cloud_native_k8s_ai/cli.py) | `k8s-ai` command line |
 | [`deploy/helm/cloud-native-k8s-ai`](deploy/helm/cloud-native-k8s-ai) | Helm chart with strict `values.schema.json` |
 | [`tests`](tests) | unit, contract, chart, API, guardrail, adversarial, property-based, concurrency, eval and docs tests |
-| [`docs`](docs) | architecture and security model |
+| [`docs`](docs) | architecture, security model, runbook, API and CLI reference, OpenAPI |
+| [`deploy/monitoring`](deploy/monitoring) | Prometheus alerting rules |
 
 ## Contributing
 

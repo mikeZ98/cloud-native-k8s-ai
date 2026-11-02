@@ -61,6 +61,7 @@ scripts/audit-attribution.sh       # identity audit of HEAD history (CI: --histo
 uvicorn --factory cloud_native_k8s_ai.api:create_app --port 8000   # control plane (dev)
 k8s-ai --help                      # CLI: spec, compile, admit, chart lint|render, eval, serve
 k8s-ai eval --min codes.f1=1 --min robustness=1   # perturbation benchmark (deterministic)
+python -m cloud_native_k8s_ai.tools.reference      # regenerate docs/api_reference.md blocks + openapi.json
 ```
 
 ## Conventions
@@ -102,6 +103,9 @@ k8s-ai eval --min codes.f1=1 --min robustness=1   # perturbation benchmark (dete
 - Every eval perturbation declares exact ground truth (the codes `AdmissionEngine.for_stack`
   must report) and its conflict slots; operators whose effects interact share a slot so
   composed expectations stay an exact union (`tests/test_evals.py` checks each operator alone).
+- Changing an endpoint, schema or CLI flag means regenerating the reference
+  (`python -m cloud_native_k8s_ai.tools.reference`); runbook commands, metrics, codes and
+  alert anchors are checked by `tests/test_docs.py` against the code and `alerts.yaml`.
 - Parse YAML with `yaml.safe_load` / `yaml.safe_load_all` only.
 - Tests are in-memory: no subprocesses, no network, no cluster. Lint YAML through the yamllint
   Python API rather than shelling out.

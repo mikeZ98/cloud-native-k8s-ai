@@ -1,0 +1,122 @@
+---
+# Prometheus alerting rules for cloud-native-k8s-ai. Rationale, thresholds and the
+# response to every alert: docs/runbook.md. Validate with `promtool check rules` before
+# loading; tune the absolute rates to your traffic.
+#
+# Group k8s-ai-control-plane uses only the control plane's own metrics (checked against
+# its registry by tests/test_docs.py). Group k8s-ai-scaling needs kube-state-metrics,
+# redis_exporter (with --check-keys=inference-jobs) and KEDA's operator metrics; metric
+# names follow those projects' current releases, verify them against your versions.
+groups:
+  - name: k8s-ai-control-plane
+    rules:
+      - alert: K8sAiAdmissionDenialStorm
+        expr: |
+          sum(rate(validations_total{target="admission",outcome="deny"}[5m])) > 0.2
+          and
+          sum(rate(validations_total{target="admission",outcome="deny"}[5m]))
+            / sum(rate(validations_total{target="admission"}[5m])) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Over half of admission requests are denied (more than 12 per minute)
+          runbook_url: https://github.com/mikeZ98/cloud-native-k8s-ai/blob/main/docs/runbook.md#31-admission-denial-storm-and-rogue-manifest-flooding
+      - alert: K8sAiAdmissionFlood
+        expr: sum(rate(http_requests_total{route="/api/v1/validate/admission"}[5m])) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Sustained admission traffic above 5 requests/s (manifest flooding)
+          runbook_url: https://github.com/mikeZ98/cloud-native-k8s-ai/blob/main/docs/runbook.md#31-admission-denial-storm-and-rogue-manifest-flooding
+      - alert: K8sAiControlPlane5xx
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+            / sum(rate(http_requests_total[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: More than 1% of control-plane responses are 5xx
+          runbook_url: https://github.com/mikeZ98/cloud-native-k8s-ai/blob/main/docs/runbook.md#34-control-plane-errors-readiness-and-saturation
+      - alert: K8sAiControlPlaneAbsent
+        expr: absent(control_plane_build_info)
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: No control-plane metrics scraped for 5 minutes
+          runbook_url: https://github.com/mikeZ98/cloud-native-k8s-ai/blob/main/docs/runbook.md#34-control-plane-errors-readiness-and-saturation
+      - alert: K8sAiWorkerSaturation
+        expr: max(http_requests_in_flight) > 40
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: More requests in flight than worker threads (40); work is queueing
+          runbook_url: https://github.com/mikeZ98/cloud-native-k8s-ai/blob/main/docs/runbook.md#34-control-plane-errors-readiness-and-saturation
+      - alert: K8sAiSlowRequests
+        expr: |
+          histogram_quantile(0.99, sum by (le, route) (
+            rate(http_request_duration_seconds_bucket{route!="/api/v1/stream/compile"}[5m])
+          )) > 2.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: p99 latency above 2.5 s on a non-streaming route
+          runbook_url: https://github.com/mikeZ98/cloud-native-k8s-ai/blob/main/docs/runbook.md#34-control-plane-errors-readiness-and-saturation
+      - alert: K8sAiSlowCompilation
+        expr: |
+          histogram_quantile(0.99, sum by (le) (rate(manifest_compile_duration_seconds_bucket[10m])))
+            > 0.25
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: p99 compilation above 250 ms (about 40x the reference baseline)
+          runbook_url: https://github.com/mikeZ98/cloud-native-k8s-ai/blob/main/docs/runbook.md#34-control-plane-errors-readiness-and-saturation
+      - alert: K8sAiStreamAborts
+        expr: |
+          sum(rate(manifest_streams_total{outcome="aborted"}[15m]))
+            / sum(rate(manifest_streams_total[15m])) > 0.2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Over 20% of manifest streams are aborted by clients
+          runbook_url: https://github.com/mikeZ98/cloud-native-k8s-ai/blob/main/docs/runbook.md#34-control-plane-errors-readiness-and-saturation
+
+  - name: k8s-ai-scaling
+    rules:
+      - alert: K8sAiQueueSaturated
+        expr: |
+          kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler="keda-hpa-inference-api"}
+            >= kube_horizontalpodautoscaler_spec_max_replicas{horizontalpodautoscaler="keda-hpa-inference-api"}
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: The inference API has been pinned at maxReplicaCount for 15 minutes
+          runbook_url: https://github.com/mikeZ98/cloud-native-k8s-ai/blob/main/docs/runbook.md#32-keda-scaler-decoupling-queue-starvation-and-saturation
+      - alert: K8sAiQueueStalled
+        expr: |
+          redis_key_size{key="inference-jobs"} > 5
+          and on ()
+          (kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler="keda-hpa-inference-api"}
+            <= kube_horizontalpodautoscaler_spec_min_replicas{horizontalpodautoscaler="keda-hpa-inference-api"})
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Jobs are waiting but the scaler stays at its minimum (decoupled scaler)
+          runbook_url: https://github.com/mikeZ98/cloud-native-k8s-ai/blob/main/docs/runbook.md#32-keda-scaler-decoupling-queue-starvation-and-saturation
+      - alert: K8sAiScalerErrors
+        expr: sum(increase(keda_scaler_errors_total[10m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: KEDA cannot read the Redis queue length
+          runbook_url: https://github.com/mikeZ98/cloud-native-k8s-ai/blob/main/docs/runbook.md#32-keda-scaler-decoupling-queue-starvation-and-saturation

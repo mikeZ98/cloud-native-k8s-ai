@@ -1,0 +1,1723 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "cloud-native-k8s-ai control plane",
+    "summary": "Compile, stream and validate zero-trust AI stack manifests, offline.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/compile": {
+      "post": {
+        "tags": [
+          "compile"
+        ],
+        "summary": "Compile an AI stack to Kubernetes manifests",
+        "operationId": "compile_manifests_api_v1_compile_post",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "json",
+                    "yaml"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The bundle as JSON, or multi-document YAML (?format=yaml / Accept)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompileResponse"
+                }
+              },
+              "application/yaml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Manifests cannot be rendered",
+            "content": {
+              "application/problem+json": {}
+            }
+          },
+          "413": {
+            "description": "Request body too large",
+            "content": {
+              "application/problem+json": {}
+            }
+          },
+          "422": {
+            "description": "Invalid spec, resource constraint or zero-trust violation",
+            "content": {
+              "application/problem+json": {}
+            }
+          },
+          "503": {
+            "description": "Control plane unavailable",
+            "content": {
+              "application/problem+json": {}
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InfraSpec"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stream/compile": {
+      "get": {
+        "tags": [
+          "compile"
+        ],
+        "summary": "Stream the reference stack (chart defaults) document by document",
+        "operationId": "stream_reference_api_v1_stream_compile_get",
+        "parameters": [
+          {
+            "name": "environment",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "dev",
+                    "staging",
+                    "prod"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Environment"
+            }
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63,
+                  "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Namespace"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE: one `manifest` event per document, then `complete`",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid spec, resource constraint or zero-trust violation",
+            "content": {
+              "application/problem+json": {}
+            }
+          },
+          "503": {
+            "description": "Control plane unavailable",
+            "content": {
+              "application/problem+json": {}
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "compile"
+        ],
+        "summary": "Stream a submitted stack document by document",
+        "operationId": "stream_spec_api_v1_stream_compile_post",
+        "responses": {
+          "200": {
+            "description": "SSE: one `manifest` event per document, then `complete`",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Manifests cannot be rendered",
+            "content": {
+              "application/problem+json": {}
+            }
+          },
+          "413": {
+            "description": "Request body too large",
+            "content": {
+              "application/problem+json": {}
+            }
+          },
+          "422": {
+            "description": "Invalid spec, resource constraint or zero-trust violation",
+            "content": {
+              "application/problem+json": {}
+            }
+          },
+          "503": {
+            "description": "Control plane unavailable",
+            "content": {
+              "application/problem+json": {}
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InfraSpec"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/validate/chart": {
+      "post": {
+        "tags": [
+          "validate"
+        ],
+        "summary": "Lint a values overlay against the chart (schema, contracts, parity, zero trust)",
+        "operationId": "validate_chart_api_v1_validate_chart_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChartValidationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "All checks passed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChartValidationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Manifests cannot be parsed",
+            "content": {
+              "application/problem+json": {}
+            }
+          },
+          "413": {
+            "description": "Request body too large",
+            "content": {
+              "application/problem+json": {}
+            }
+          },
+          "422": {
+            "description": "Schema, contract, render, parity or zero-trust findings",
+            "content": {
+              "application/problem+json": {}
+            }
+          },
+          "503": {
+            "description": "Control plane unavailable",
+            "content": {
+              "application/problem+json": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/validate/topology": {
+      "post": {
+        "tags": [
+          "validate"
+        ],
+        "summary": "Run the zero-trust topology solver on submitted manifests",
+        "operationId": "validate_topology_api_v1_validate_topology_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TopologyRequest"
+              }
+            },
+            "application/yaml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "All checks passed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopologyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Manifests cannot be parsed",
+            "content": {
+              "application/problem+json": {}
+            }
+          },
+          "413": {
+            "description": "Request body too large",
+            "content": {
+              "application/problem+json": {}
+            }
+          },
+          "422": {
+            "description": "Zero-trust violations (default deny, isolation, unauthorized flows)",
+            "content": {
+              "application/problem+json": {}
+            }
+          },
+          "503": {
+            "description": "Control plane unavailable",
+            "content": {
+              "application/problem+json": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/validate/admission": {
+      "post": {
+        "tags": [
+          "validate"
+        ],
+        "summary": "Run the admission guardrails (workload security, zero trust, autoscaling)",
+        "operationId": "validate_admission_api_v1_validate_admission_post",
+        "parameters": [
+          {
+            "name": "remediate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Run the auto-remediation loop first",
+              "default": false,
+              "title": "Remediate"
+            },
+            "description": "Run the auto-remediation loop first"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "All checks passed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdmissionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Manifests cannot be parsed",
+            "content": {
+              "application/problem+json": {}
+            }
+          },
+          "413": {
+            "description": "Request body too large",
+            "content": {
+              "application/problem+json": {}
+            }
+          },
+          "422": {
+            "description": "Admission denied: violations with remediation advice",
+            "content": {
+              "application/problem+json": {}
+            }
+          },
+          "503": {
+            "description": "Control plane unavailable",
+            "content": {
+              "application/problem+json": {}
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdmissionRequest"
+              }
+            },
+            "application/yaml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "tags": [
+          "probes"
+        ],
+        "summary": "Liveness: the process serves requests",
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "tags": [
+          "probes"
+        ],
+        "summary": "Readiness: chart, schemas and generator passed their self-checks",
+        "operationId": "readyz_readyz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Not ready (starting, failed self-check or draining)"
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "tags": [
+          "probes"
+        ],
+        "summary": "Prometheus metrics (text exposition format)",
+        "operationId": "prometheus_metrics_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/plain; version=1.0.0; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AIStackSpec": {
+        "additionalProperties": false,
+        "description": "Everything the generator needs beyond ``InfraSettings``.",
+        "properties": {
+          "app": {
+            "$ref": "#/components/schemas/FastAPIAppSpec"
+          },
+          "qdrant": {
+            "$ref": "#/components/schemas/QdrantSpec"
+          },
+          "redis": {
+            "$ref": "#/components/schemas/RedisSpec"
+          },
+          "autoscaling": {
+            "$ref": "#/components/schemas/AutoscalingPolicy"
+          },
+          "budget": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceBudget"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "ingressNamespace": {
+            "default": "ingress-nginx",
+            "maxLength": 63,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "title": "Ingressnamespace",
+            "type": "string"
+          },
+          "kedaNamespace": {
+            "default": "keda",
+            "maxLength": 63,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "title": "Kedanamespace",
+            "type": "string"
+          },
+          "kedaOperatorLabels": {
+            "patternProperties": {
+              "^(?:[a-z0-9]([-a-z0-9]*[a-z0-9])?(?:\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$": {
+                "maxLength": 63,
+                "pattern": "^(?:[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?)?$",
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 317
+            },
+            "title": "Kedaoperatorlabels",
+            "type": "object"
+          }
+        },
+        "required": [
+          "app",
+          "qdrant",
+          "redis"
+        ],
+        "title": "AIStackSpec",
+        "type": "object"
+      },
+      "AutoscalingPolicy": {
+        "additionalProperties": false,
+        "description": "Scale a worker Deployment on the length of a Redis list (job queue).",
+        "properties": {
+          "listName": {
+            "default": "inference-jobs",
+            "maxLength": 512,
+            "minLength": 1,
+            "pattern": "^\\S+$",
+            "title": "Listname",
+            "type": "string"
+          },
+          "listLength": {
+            "default": 5,
+            "minimum": 1,
+            "title": "Listlength",
+            "type": "integer"
+          },
+          "activationListLength": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Activationlistlength",
+            "type": "integer"
+          },
+          "minReplicas": {
+            "default": 1,
+            "maximum": 1000,
+            "minimum": 0,
+            "title": "Minreplicas",
+            "type": "integer"
+          },
+          "maxReplicas": {
+            "default": 10,
+            "maximum": 1000,
+            "minimum": 1,
+            "title": "Maxreplicas",
+            "type": "integer"
+          },
+          "idleReplicas": {
+            "anyOf": [
+              {
+                "maximum": 1000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Idlereplicas"
+          },
+          "cooldownPeriod": {
+            "default": 300,
+            "maximum": 86400,
+            "minimum": 0,
+            "title": "Cooldownperiod",
+            "type": "integer"
+          },
+          "pollingInterval": {
+            "default": 30,
+            "maximum": 3600,
+            "minimum": 1,
+            "title": "Pollinginterval",
+            "type": "integer"
+          },
+          "databaseIndex": {
+            "default": 0,
+            "maximum": 15,
+            "minimum": 0,
+            "title": "Databaseindex",
+            "type": "integer"
+          },
+          "enableTls": {
+            "default": false,
+            "title": "Enabletls",
+            "type": "boolean"
+          },
+          "authenticationRef": {
+            "anyOf": [
+              {
+                "maxLength": 63,
+                "minLength": 1,
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Authenticationref"
+          }
+        },
+        "title": "AutoscalingPolicy",
+        "type": "object"
+      },
+      "EnvVar": {
+        "additionalProperties": false,
+        "description": "Plain value or secret reference, never both; secrets never appear inline.",
+        "properties": {
+          "name": {
+            "maxLength": 253,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "title": "Name",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Value"
+          },
+          "valueFrom": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnvVarSource"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "EnvVar",
+        "type": "object"
+      },
+      "EnvVarSource": {
+        "additionalProperties": false,
+        "properties": {
+          "secretKeyRef": {
+            "$ref": "#/components/schemas/SecretKeySelector"
+          }
+        },
+        "required": [
+          "secretKeyRef"
+        ],
+        "title": "EnvVarSource",
+        "type": "object"
+      },
+      "FastAPIAppSpec": {
+        "additionalProperties": false,
+        "description": "High-level contract for the FastAPI inference microservice.",
+        "properties": {
+          "name": {
+            "default": "inference-api",
+            "maxLength": 63,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "image": {
+            "title": "Image",
+            "type": "string"
+          },
+          "replicas": {
+            "default": 2,
+            "maximum": 1000,
+            "minimum": 0,
+            "title": "Replicas",
+            "type": "integer"
+          },
+          "containerPort": {
+            "default": 8000,
+            "maximum": 65535,
+            "minimum": 1,
+            "title": "Containerport",
+            "type": "integer"
+          },
+          "servicePort": {
+            "default": 80,
+            "maximum": 65535,
+            "minimum": 1,
+            "title": "Serviceport",
+            "type": "integer"
+          },
+          "resources": {
+            "$ref": "#/components/schemas/ResourceRequirements"
+          },
+          "livenessPath": {
+            "default": "/healthz",
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^/",
+            "title": "Livenesspath",
+            "type": "string"
+          },
+          "readinessPath": {
+            "default": "/readyz",
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^/",
+            "title": "Readinesspath",
+            "type": "string"
+          },
+          "env": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EnvVar"
+            },
+            "title": "Env",
+            "type": "array"
+          },
+          "labels": {
+            "patternProperties": {
+              "^(?:[a-z0-9]([-a-z0-9]*[a-z0-9])?(?:\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$": {
+                "maxLength": 63,
+                "pattern": "^(?:[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?)?$",
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 317
+            },
+            "title": "Labels",
+            "type": "object"
+          }
+        },
+        "required": [
+          "image",
+          "resources"
+        ],
+        "title": "FastAPIAppSpec",
+        "type": "object"
+      },
+      "QdrantSpec": {
+        "additionalProperties": false,
+        "description": "Qdrant StatefulSet contract: REST/gRPC ports and separate storage/snapshot PVCs.",
+        "properties": {
+          "name": {
+            "default": "qdrant",
+            "maxLength": 63,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "image": {
+            "title": "Image",
+            "type": "string"
+          },
+          "replicas": {
+            "default": 1,
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Replicas",
+            "type": "integer"
+          },
+          "restPort": {
+            "default": 6333,
+            "maximum": 65535,
+            "minimum": 1,
+            "title": "Restport",
+            "type": "integer"
+          },
+          "grpcPort": {
+            "default": 6334,
+            "maximum": 65535,
+            "minimum": 1,
+            "title": "Grpcport",
+            "type": "integer"
+          },
+          "resources": {
+            "$ref": "#/components/schemas/ResourceRequirements"
+          },
+          "storage": {
+            "$ref": "#/components/schemas/QdrantVolume"
+          },
+          "snapshots": {
+            "$ref": "#/components/schemas/QdrantVolume"
+          },
+          "labels": {
+            "patternProperties": {
+              "^(?:[a-z0-9]([-a-z0-9]*[a-z0-9])?(?:\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$": {
+                "maxLength": 63,
+                "pattern": "^(?:[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?)?$",
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 317
+            },
+            "title": "Labels",
+            "type": "object"
+          }
+        },
+        "required": [
+          "image",
+          "resources"
+        ],
+        "title": "QdrantSpec",
+        "type": "object"
+      },
+      "QdrantVolume": {
+        "additionalProperties": false,
+        "properties": {
+          "size": {
+            "title": "Size",
+            "type": "string"
+          },
+          "mountPath": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^/",
+            "title": "Mountpath",
+            "type": "string"
+          },
+          "storageClassName": {
+            "anyOf": [
+              {
+                "maxLength": 253,
+                "minLength": 1,
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Storageclassname"
+          }
+        },
+        "required": [
+          "size",
+          "mountPath"
+        ],
+        "title": "QdrantVolume",
+        "type": "object"
+      },
+      "RdbSavePoint": {
+        "additionalProperties": false,
+        "description": "``save <seconds> <changes>``: snapshot after ``seconds`` if ``changes`` keys changed.",
+        "properties": {
+          "seconds": {
+            "maximum": 86400,
+            "minimum": 1,
+            "title": "Seconds",
+            "type": "integer"
+          },
+          "changes": {
+            "minimum": 1,
+            "title": "Changes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seconds",
+          "changes"
+        ],
+        "title": "RdbSavePoint",
+        "type": "object"
+      },
+      "RedisPersistence": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "default": "aof",
+            "enum": [
+              "none",
+              "rdb",
+              "aof",
+              "rdb+aof"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "appendfsync": {
+            "default": "everysec",
+            "enum": [
+              "always",
+              "everysec",
+              "no"
+            ],
+            "title": "Appendfsync",
+            "type": "string"
+          },
+          "savePoints": {
+            "default": [
+              {
+                "seconds": 3600,
+                "changes": 1
+              },
+              {
+                "seconds": 300,
+                "changes": 100
+              }
+            ],
+            "items": {
+              "$ref": "#/components/schemas/RdbSavePoint"
+            },
+            "title": "Savepoints",
+            "type": "array"
+          },
+          "volumeSize": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "8Gi",
+            "title": "Volumesize"
+          },
+          "storageClassName": {
+            "anyOf": [
+              {
+                "maxLength": 253,
+                "minLength": 1,
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Storageclassname"
+          }
+        },
+        "title": "RedisPersistence",
+        "type": "object"
+      },
+      "RedisSpec": {
+        "additionalProperties": false,
+        "description": "Redis contract: in-memory ceiling below the container limit, explicit persistence.",
+        "properties": {
+          "name": {
+            "default": "redis",
+            "maxLength": 63,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "image": {
+            "title": "Image",
+            "type": "string"
+          },
+          "port": {
+            "default": 6379,
+            "maximum": 65535,
+            "minimum": 1,
+            "title": "Port",
+            "type": "integer"
+          },
+          "resources": {
+            "$ref": "#/components/schemas/ResourceRequirements"
+          },
+          "maxmemory": {
+            "title": "Maxmemory",
+            "type": "string"
+          },
+          "maxmemoryPolicy": {
+            "default": "noeviction",
+            "enum": [
+              "noeviction",
+              "allkeys-lru",
+              "allkeys-lfu",
+              "allkeys-random",
+              "volatile-lru",
+              "volatile-lfu",
+              "volatile-random",
+              "volatile-ttl"
+            ],
+            "title": "Maxmemorypolicy",
+            "type": "string"
+          },
+          "persistence": {
+            "$ref": "#/components/schemas/RedisPersistence"
+          },
+          "dataMountPath": {
+            "default": "/data",
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^/",
+            "title": "Datamountpath",
+            "type": "string"
+          },
+          "labels": {
+            "patternProperties": {
+              "^(?:[a-z0-9]([-a-z0-9]*[a-z0-9])?(?:\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$": {
+                "maxLength": 63,
+                "pattern": "^(?:[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?)?$",
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 317
+            },
+            "title": "Labels",
+            "type": "object"
+          }
+        },
+        "required": [
+          "image",
+          "resources",
+          "maxmemory"
+        ],
+        "title": "RedisSpec",
+        "type": "object"
+      },
+      "ResourceBudget": {
+        "additionalProperties": false,
+        "description": "Upper bound on what the target may consume when scaled to ``max_replicas``.",
+        "properties": {
+          "cpu": {
+            "title": "Cpu",
+            "type": "string"
+          },
+          "memory": {
+            "title": "Memory",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cpu",
+          "memory"
+        ],
+        "title": "ResourceBudget",
+        "type": "object"
+      },
+      "ResourceList": {
+        "additionalProperties": false,
+        "properties": {
+          "cpu": {
+            "title": "Cpu",
+            "type": "string"
+          },
+          "memory": {
+            "title": "Memory",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cpu",
+          "memory"
+        ],
+        "title": "ResourceList",
+        "type": "object"
+      },
+      "ResourceRequirements": {
+        "additionalProperties": false,
+        "description": "Requests and limits; both CPU and memory are mandatory and requests must fit limits.",
+        "properties": {
+          "requests": {
+            "$ref": "#/components/schemas/ResourceList"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/ResourceList"
+          }
+        },
+        "required": [
+          "requests",
+          "limits"
+        ],
+        "title": "ResourceRequirements",
+        "type": "object"
+      },
+      "SecretKeySelector": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 253,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$",
+            "title": "Name",
+            "type": "string"
+          },
+          "key": {
+            "maxLength": 253,
+            "pattern": "^[-._A-Za-z0-9]+$",
+            "title": "Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "key"
+        ],
+        "title": "SecretKeySelector",
+        "type": "object"
+      },
+      "InfraSpec": {
+        "additionalProperties": false,
+        "description": "What to compile: target environment and namespace plus the AI stack.",
+        "properties": {
+          "environment": {
+            "default": "dev",
+            "enum": [
+              "dev",
+              "staging",
+              "prod"
+            ],
+            "title": "Environment",
+            "type": "string"
+          },
+          "namespace": {
+            "default": "ai-system",
+            "maxLength": 63,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "title": "Namespace",
+            "type": "string"
+          },
+          "stack": {
+            "$ref": "#/components/schemas/AIStackSpec"
+          }
+        },
+        "required": [
+          "stack"
+        ],
+        "title": "InfraSpec",
+        "type": "object"
+      },
+      "CompileResponse": {
+        "additionalProperties": false,
+        "description": "A compiled bundle in apply order (NetworkPolicies first, ScaledObject last).",
+        "properties": {
+          "environment": {
+            "enum": [
+              "dev",
+              "staging",
+              "prod"
+            ],
+            "title": "Environment",
+            "type": "string"
+          },
+          "namespace": {
+            "maxLength": 63,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "title": "Namespace",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "kinds": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Kinds",
+            "type": "object"
+          },
+          "documents": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Documents",
+            "type": "array"
+          }
+        },
+        "required": [
+          "environment",
+          "namespace",
+          "count",
+          "kinds",
+          "documents"
+        ],
+        "title": "CompileResponse",
+        "type": "object"
+      },
+      "ReleaseRef": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "default": "ai",
+            "maxLength": 53,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$",
+            "title": "Name",
+            "type": "string"
+          },
+          "namespace": {
+            "default": "ai-system",
+            "maxLength": 63,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "title": "Namespace",
+            "type": "string"
+          }
+        },
+        "title": "ReleaseRef",
+        "type": "object"
+      },
+      "ChartValidationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "const": "pass",
+            "default": "pass",
+            "title": "Status",
+            "type": "string"
+          },
+          "release": {
+            "$ref": "#/components/schemas/ReleaseRef"
+          },
+          "findings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Findings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "release"
+        ],
+        "title": "ChartValidationResponse",
+        "type": "object"
+      },
+      "AdmissionReport": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/GuardrailDecision"
+          },
+          "objects": {
+            "items": {
+              "$ref": "#/components/schemas/ObjectDecision"
+            },
+            "title": "Objects",
+            "type": "array"
+          },
+          "violations": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyViolation"
+            },
+            "title": "Violations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "decision",
+          "objects",
+          "violations"
+        ],
+        "title": "AdmissionReport",
+        "type": "object"
+      },
+      "GuardrailDecision": {
+        "enum": [
+          "ALLOW",
+          "WARN",
+          "DENY"
+        ],
+        "title": "GuardrailDecision",
+        "type": "string"
+      },
+      "JsonPatchOp": {
+        "additionalProperties": false,
+        "description": "One RFC 6902 operation (``add``, ``replace`` or ``remove``) on a JSON pointer.",
+        "properties": {
+          "op": {
+            "enum": [
+              "add",
+              "replace",
+              "remove"
+            ],
+            "title": "Op",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "value": {
+            "default": null,
+            "title": "Value"
+          }
+        },
+        "required": [
+          "op",
+          "path"
+        ],
+        "title": "JsonPatchOp",
+        "type": "object"
+      },
+      "ObjectDecision": {
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/ObjectRef"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/GuardrailDecision"
+          }
+        },
+        "required": [
+          "target",
+          "decision"
+        ],
+        "title": "ObjectDecision",
+        "type": "object"
+      },
+      "ObjectRef": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "namespace": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Namespace"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "name"
+        ],
+        "title": "ObjectRef",
+        "type": "object"
+      },
+      "PolicyViolation": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "policy": {
+            "title": "Policy",
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "WARN",
+              "DENY"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ObjectRef"
+          },
+          "path": {
+            "default": "",
+            "title": "Path",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "remediation": {
+            "$ref": "#/components/schemas/RemediationAdvice"
+          }
+        },
+        "required": [
+          "code",
+          "policy",
+          "decision",
+          "target",
+          "message",
+          "remediation"
+        ],
+        "title": "PolicyViolation",
+        "type": "object"
+      },
+      "RemediationAdvice": {
+        "additionalProperties": false,
+        "description": "How to fix a violation: a patch on the object, a new object, or manual steps.",
+        "properties": {
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "action": {
+            "enum": [
+              "patch",
+              "create",
+              "manual"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "patch": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/JsonPatchOp"
+            },
+            "title": "Patch",
+            "type": "array"
+          },
+          "document": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Document"
+          }
+        },
+        "required": [
+          "summary",
+          "action"
+        ],
+        "title": "RemediationAdvice",
+        "type": "object"
+      },
+      "RemediationRound": {
+        "additionalProperties": false,
+        "properties": {
+          "round": {
+            "minimum": 1,
+            "title": "Round",
+            "type": "integer"
+          },
+          "applied": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Applied",
+            "type": "array"
+          },
+          "remaining": {
+            "title": "Remaining",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "round",
+          "applied",
+          "remaining"
+        ],
+        "title": "RemediationRound",
+        "type": "object"
+      },
+      "RemediationSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "initialDecision": {
+            "$ref": "#/components/schemas/GuardrailDecision"
+          },
+          "rounds": {
+            "items": {
+              "$ref": "#/components/schemas/RemediationRound"
+            },
+            "title": "Rounds",
+            "type": "array"
+          },
+          "converged": {
+            "title": "Converged",
+            "type": "boolean"
+          },
+          "manifests": {
+            "title": "Manifests",
+            "type": "string"
+          }
+        },
+        "required": [
+          "initialDecision",
+          "rounds",
+          "converged",
+          "manifests"
+        ],
+        "title": "RemediationSummary",
+        "type": "object"
+      },
+      "AdmissionResponse": {
+        "additionalProperties": false,
+        "description": "ALLOW or WARN; a DENY is a 422 ``admission-denied`` problem instead.",
+        "properties": {
+          "report": {
+            "$ref": "#/components/schemas/AdmissionReport"
+          },
+          "remediation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RemediationSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "report"
+        ],
+        "title": "AdmissionResponse",
+        "type": "object"
+      },
+      "TopologyResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "const": "pass",
+            "default": "pass",
+            "title": "Status",
+            "type": "string"
+          },
+          "namespace": {
+            "maxLength": 63,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "title": "Namespace",
+            "type": "string"
+          },
+          "policies": {
+            "title": "Policies",
+            "type": "integer"
+          },
+          "workloads": {
+            "title": "Workloads",
+            "type": "integer"
+          },
+          "reachable": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reachable",
+            "type": "array"
+          }
+        },
+        "required": [
+          "namespace",
+          "policies",
+          "workloads",
+          "reachable"
+        ],
+        "title": "TopologyResponse",
+        "type": "object"
+      },
+      "ChartValidationRequest": {
+        "additionalProperties": false,
+        "description": "A values overlay, merged over the chart defaults like ``helm install -f``.",
+        "properties": {
+          "values": {
+            "additionalProperties": true,
+            "title": "Values",
+            "type": "object"
+          },
+          "release": {
+            "$ref": "#/components/schemas/ReleaseRef"
+          }
+        },
+        "title": "ChartValidationRequest",
+        "type": "object"
+      },
+      "TopologyRequest": {
+        "additionalProperties": false,
+        "description": "Multi-document manifest YAML, checked against the intent of ``spec``\n(the reference stack when omitted).",
+        "properties": {
+          "manifests": {
+            "minLength": 1,
+            "title": "Manifests",
+            "type": "string"
+          },
+          "spec": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InfraSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "manifests"
+        ],
+        "title": "TopologyRequest",
+        "type": "object"
+      },
+      "AdmissionRequest": {
+        "additionalProperties": false,
+        "description": "Multi-document manifest YAML to run through every admission guardrail.",
+        "properties": {
+          "manifests": {
+            "minLength": 1,
+            "title": "Manifests",
+            "type": "string"
+          }
+        },
+        "required": [
+          "manifests"
+        ],
+        "title": "AdmissionRequest",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "const": "ok",
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "uptimeSeconds": {
+            "title": "Uptimeseconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "version",
+          "uptimeSeconds"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "ReadinessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "ready",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "checks": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Checks",
+            "type": "object"
+          }
+        },
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "ReadinessResponse",
+        "type": "object"
+      }
+    }
+  }
+}

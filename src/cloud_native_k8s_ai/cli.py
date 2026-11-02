@@ -218,14 +218,21 @@ def build_parser() -> argparse.ArgumentParser:
         return command
 
     spec = add("spec", _cmd_spec, "print the reference stack spec (chart defaults)")
-    spec.add_argument("--namespace")
-    spec.add_argument("--environment", choices=("dev", "staging", "prod"))
-    spec.add_argument("-o", "--output")
+    spec.add_argument("--namespace", help="override the target namespace")
+    spec.add_argument(
+        "--environment", choices=("dev", "staging", "prod"), help="override the environment label"
+    )
+    spec.add_argument("-o", "--output", help="write the spec here instead of stdout")
 
     compile_ = add("compile", _cmd_compile, "compile a stack spec into manifests", chart=False)
     compile_.add_argument("spec", help="InfraSpec file (YAML or JSON), or - for stdin")
-    compile_.add_argument("--format", choices=("yaml", "json"), default="yaml")
-    compile_.add_argument("-o", "--output")
+    compile_.add_argument(
+        "--format",
+        choices=("yaml", "json"),
+        default="yaml",
+        help="multi-document YAML or JSON bundle",
+    )
+    compile_.add_argument("-o", "--output", help="write the manifests here instead of stdout")
 
     admit = add("admit", _cmd_admit, "run the admission guardrails on manifests", chart=False)
     admit.add_argument("manifests", help="multi-document manifest YAML, or - for stdin")
@@ -233,7 +240,11 @@ def build_parser() -> argparse.ArgumentParser:
     admit.add_argument("--remediate", action="store_true", help="run the critic loop first")
     admit.add_argument("-o", "--output", help="write remediated manifests here")
 
-    chart = commands.add_parser("chart", help="lint or render the Helm chart offline")
+    chart = commands.add_parser(
+        "chart",
+        help="lint or render the Helm chart offline",
+        description="lint or render the Helm chart offline",
+    )
     chart_commands = chart.add_subparsers(dest="chart_command", required=True)
     for name, handler, text in (
         ("lint", _cmd_chart_lint, "lint the chart (schema, contracts, parity, zero trust)"),
@@ -241,30 +252,38 @@ def build_parser() -> argparse.ArgumentParser:
     ):
         command = chart_commands.add_parser(name, help=text, description=text)
         command.set_defaults(handler=handler)
-        command.add_argument("--chart", type=Path, default=DEFAULT_CHART_DIR)
+        command.add_argument(
+            "--chart", type=Path, default=DEFAULT_CHART_DIR, help="chart directory"
+        )
         command.add_argument("--values", action="append", default=[], help="values overlay file")
-        command.add_argument("--release", default="ai")
-        command.add_argument("--namespace", default="ai-system")
+        command.add_argument("--release", default="ai", help="Helm release name")
+        command.add_argument("--namespace", default="ai-system", help="release namespace")
         if name == "render":
-            command.add_argument("-o", "--output")
+            command.add_argument("-o", "--output", help="write the manifests here")
 
     evaluate = add("eval", _cmd_eval, "benchmark the guardrails against seeded perturbations")
     evaluate.add_argument("--spec", help="stack spec to evaluate (default: chart reference)")
-    evaluate.add_argument("--seed", type=int, default=0)
-    evaluate.add_argument("--samples", type=int, default=200)
-    evaluate.add_argument("--spec-samples", type=int, default=50)
+    evaluate.add_argument("--seed", type=int, default=0, help="perturbation stream seed")
+    evaluate.add_argument("--samples", type=int, default=200, help="manifest samples")
+    evaluate.add_argument(
+        "--spec-samples", type=int, default=50, help="AIStackSpec samples (0 skips the suite)"
+    )
     evaluate.add_argument("--epsilon", type=float, default=0.3, help="perturbation budget 0..1")
-    evaluate.add_argument("--benign-ratio", type=float, default=0.25)
+    evaluate.add_argument(
+        "--benign-ratio", type=float, default=0.25, help="share of unperturbed-intent samples"
+    )
     evaluate.add_argument("--no-remediate", action="store_true", help="skip the critic loop")
-    evaluate.add_argument("--format", choices=("text", "json"), default="text")
+    evaluate.add_argument(
+        "--format", choices=("text", "json"), default="text", help="summary or full JSON report"
+    )
     evaluate.add_argument(
         "--min", action="append", default=[], metavar="METRIC=VALUE", help="quality gate"
     )
-    evaluate.add_argument("-o", "--output")
+    evaluate.add_argument("-o", "--output", help="write the report here instead of stdout")
 
     serve = add("serve", _cmd_serve, "run the control plane (uvicorn)")
-    serve.add_argument("--host", default="127.0.0.1")
-    serve.add_argument("--port", type=int, default=8000)
+    serve.add_argument("--host", default="127.0.0.1", help="bind address")
+    serve.add_argument("--port", type=int, default=8000, help="TCP port")
     return parser
 
 

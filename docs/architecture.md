@@ -16,8 +16,18 @@ HTTP control plane. Everything runs in-process; nothing here needs a cluster.
 - [8. Control plane and observability](#8-control-plane-and-observability)
 - [9. Module map](#9-module-map)
 
-Security details (threats, the violation-code catalog, Kyverno/OPA parity, benchmarks)
-live in [security_model.md](security_model.md).
+## Documentation map
+
+| Document | Read it for |
+|---|---|
+| [README](../README.md) | overview, quickstart, guardrail runbook summary, evaluation results |
+| [architecture.md](architecture.md) (this page) | components, topology matrix, formal zero-trust invariant, critic and KEDA loops |
+| [security_model.md](security_model.md) | threat model, 41 adversarial vectors, YAML bombs, code catalog, Kyverno/OPA parity, benchmarks |
+| [runbook.md](runbook.md) | alerts and thresholds, incident playbooks, break-glass, offline drift analysis |
+| [api_reference.md](api_reference.md) | endpoints, schemas, RFC 7807 problems, SSE protocol, CLI reference |
+| [openapi.json](openapi.json) | the complete OpenAPI 3.1 document of the control plane |
+| [`deploy/monitoring/alerts.yaml`](../deploy/monitoring/alerts.yaml) | Prometheus alerting rules referenced by the runbook |
+| [CONTRIBUTING.md](../CONTRIBUTING.md) | attribution policy, quality gates, fast-forward workflow |
 
 ## 1. Components
 
