@@ -55,7 +55,7 @@ ruff check . && ruff format --check .
 mypy                      # strict, configured in pyproject.toml
 bandit -c pyproject.toml -r src
 yamllint --strict .
-pytest                    # hermetic: sockets disabled, coverage ≥ 90% (branch)
+pytest                    # hermetic: sockets disabled, 100% branch coverage enforced
 scripts/audit-attribution.sh
 ```
 

@@ -55,7 +55,7 @@ ruff check . && ruff format --check .
 mypy                               # --strict via pyproject
 bandit -c pyproject.toml -r src
 yamllint --strict .                # Helm templates ignored (Go templates)
-pytest                             # hermetic, --disable-socket, cov ≥ 90% branch
+pytest                             # hermetic, --disable-socket, 100% branch coverage enforced
 HYPOTHESIS_PROFILE=deep pytest tests/test_deep_eval.py   # long fuzzing run (default: derandomized)
 scripts/audit-attribution.sh       # identity audit of HEAD history (CI: --history-only)
 uvicorn --factory cloud_native_k8s_ai.api:create_app --port 8000   # control plane (dev)
